@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+    <link rel="icon" href="./favicon.ico" />
+    <meta name="viewport" content="width=device-width" />
+    <title>小爱音箱操控面板</title>
+    <!-- 预加载字体文件，减少加载延迟 -->
+    <link rel="preload" href="./materialicons.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="./materialiconsoutlined.woff2" as="font" type="font/woff2" crossorigin>
+    <script src="./jquery-3.7.1.min.js?version=1771327223"></script>
+    <script src="./setting.js?version=1771327223"></script>
+    <link rel="stylesheet" type="text/css" href="./setting.css?version=1771327223" />
+
+
+</head>
+
+<body>
+    <div class="setting-header" role="banner">
+        <div class="header-inner">
+            <h2>
+                <span>小爱音箱设置面板</span>
+            </h2>
+            <div class="header-buttons">
+                <button onclick="location.href = '/static/default/index.html'" aria-label="返回首页">
+                    <span class="material-icons" aria-hidden="true">home</span>
+                    <span>返回首页</span>
+                </button>
+                <button class="save-button" aria-label="保存配置">
+                    <span class="material-icons" aria-hidden="true">save</span>
+                    <span>保存配置</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="setting-container" id="setting" role="main">
+        <div class="setting-card setting-panel">
+            <div class="card-content">
+                <label for="mi_did">*勾选设备(至少勾选1个):</label>
+                <button class="option-inline mini-button" id="update-devices">获取设备列表(没自动更新时使用)</button>
+                <div id="mi_did" class="device-selection"></div>
+            </div>
+        </div>
+
+        <div class="setting-card setting-panel">
+            <h3 class="card-title">基础设置</h3>
+            <div class="card-content">
+                <!-- Tab 导航 -->
+                <div class="auth-tabs" role="tablist" aria-label="登录方式选择">
+                    <button class="auth-tab-button active" data-tab="account-password" role="tab" aria-selected="true"
+                        aria-controls="tab-account-password">
+                        <span class="material-icons" aria-hidden="true">account_circle</span>
+                        <span>账号密码登录</span>
+                    </button>
+                    <button class="auth-tab-button" data-tab="cookie" role="tab" aria-selected="false"
+                        aria-controls="tab-cookie">
+                        <span class="material-icons" aria-hidden="true">cookie</span>
+                        <span>Cookie 登录</span>
+                    </button>
+                    <button class="auth-tab-button" data-tab="qrcode" role="tab" aria-selected="false"
+                        aria-controls="tab-qrcode">
+                        <span class="material-icons" aria-hidden="true">qr_code_2</span>
+                        <span>二维码登录</span>
+                    </button>
+                </div>
+
+                <!-- Tab 内容区域 -->
+                <div class="auth-tab-panels">
+                    <!-- 账号密码登录面板 -->
+                    <div class="auth-tab-content active" id="tab-account-password" role="tabpanel"
+                        aria-labelledby="account-password-tab">
+                        <div class="rows">
+                            <div class="form-item">
+                                <label for="account">*小米账号:</label>
+                                <input id="account" type="text" placeholder="填写小米登录账号" aria-required="true" />
+                            </div>
+
+                            <div class="form-item">
+                                <label for="password">*小米密码:</label>
+                                <input id="password" type="password" placeholder="填写小米登录密码" aria-required="true" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cookie 登录面板 -->
+                    <div class="auth-tab-content" id="tab-cookie" role="tabpanel" aria-labelledby="cookie-tab">
+                        <div class="rows">
+                            <div class="form-item">
+                                <label for="cookie">*Cookie:<a href="https://xdocs.hanxi.cc/issues/688.html"
+                                        target="_blank">文档</a></label>
+                                <input id="cookie" type="text" placeholder="粘贴完整的 Cookie 字符串" aria-required="true" />
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 二维码登录面板 -->
+                    <div class="auth-tab-content" id="tab-qrcode" role="tabpanel" aria-labelledby="qrcode-tab">
+                        <div class="rows">
+                            <div class="form-item">
+                                <label>*扫码登录:</label>
+                                <!-- 显示二维码的容器：点击按钮后再显示 -->
+                                <div id="qrcode-container">
+                                    <img id="qrcode-image" src="" alt="二维码" class="qrcode-image-hidden" />
+                                    <p id="qrcode-status">点击下方按钮获取登录二维码</p>
+                                </div>
+                                <button id="refresh-qrcode">获取二维码</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 公共配置项 -->
+                <div class="rows" style="margin-top: 20px">
+                    <div class="form-item">
+                            <label class="setting-label">*NAS地址:<span class="tooltip-icon" data-tooltip="局域网访问时填写局域网IP和端口；如需外网访问，请先在本地配置Nginx反向代理，然后填写代理地址">?</span>
+                            </label>
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <select id="protocol" style="width: auto;">
+                                    <option value="http" selected>http</option>
+                                    <option value="https">https</option>
+                                </select>
+                                <span>://</span>
+                                <input id="host" type="text" placeholder="填写主机地址" style="flex: 1;" aria-required="true" />
+                                <span>:</span>
+                                <input id="port" type="number" placeholder="填写端口" style="width: 100px;" aria-required="true" />
+                            </div>
+                        </div>
+
+                    <!-- Emby配置 -->
+                    <div class="form-item">
+                        <label for="emby_host">Emby服务器地址:</label>
+                        <div style="display: flex; align-items: center; gap: 5px;">
+                            <select id="emby_protocol" style="width: auto;">
+                                <option value="http" selected>http</option>
+                                <option value="https">https</option>
+                            </select>
+                            <span>://</span>
+                            <input id="emby_host_input" type="text" placeholder="填写主机地址" style="flex: 1;" />
+                            <span>:</span>
+                            <input id="emby_port" type="number" placeholder="填写端口" style="width: 100px;" />
+                        </div>
+                    </div>
+
+                    <div class="form-item">
+                        <label for="emby_user_id">Emby用户ID:</label>
+                        <input id="emby_user_id" type="text" value="" placeholder="请输入Emby用户ID" />
+                    </div>
+
+                    <div class="form-item">
+                        <label for="emby_api_key">Emby API Key:</label>
+                        <input id="emby_api_key" type="text" value="" placeholder="请输入Emby API Key" />
+                    </div>
+
+
+                </div>
+            </div>
+        </div>
+
+        <div class="advanced-config-toggle" id="advancedConfigToggle" role="button" aria-expanded="false"
+            aria-controls="advancedConfigContent" tabindex="0">
+            <span>⚠️</span>
+            <span class="advanced-config-toggle-text">以下为高级配置，请谨慎修改，错误配置可能影响系统运行</span>
+            <span class="advanced-config-toggle-icon">▼</span>
+        </div>
+
+        <div class="advanced-config-content" id="advancedConfigContent">
+            <div class="config-tabs" role="tablist" aria-label="高级配置分类">
+                <button type="button" class="config-tab-button active" data-tab="filepath" role="tab" aria-selected="true" aria-controls="tab-filepath">文件路径</button>
+                <button type="button" class="config-tab-button" data-tab="playback" role="tab" aria-selected="false" aria-controls="tab-playback">播放控制</button>
+                <button type="button" class="config-tab-button" data-tab="search" role="tab" aria-selected="false" aria-controls="tab-search">搜索匹配</button>
+                <button type="button" class="config-tab-button" data-tab="audio" role="tab" aria-selected="false" aria-controls="tab-audio">音频处理</button>
+                <button type="button" class="config-tab-button" data-tab="tts" role="tab" aria-selected="false" aria-controls="tab-tts">语音TTS</button>
+                <button type="button" class="config-tab-button" data-tab="voicecmd" role="tab" aria-selected="false" aria-controls="tab-voicecmd">语音命令</button>
+                <button type="button" class="config-tab-button" data-tab="device" role="tab" aria-selected="false" aria-controls="tab-device">设备对话</button>
+                <button type="button" class="config-tab-button" data-tab="other" role="tab" aria-selected="false" aria-controls="tab-other">其他</button>
+            </div>
+            <div class="config-tab-panels">
+                <div class="config-tab-content setting-panel active" id="tab-filepath" role="tabpanel">
+                    <div class="card-content">
+                    <div class="rows">
+
+
+                        <label for="conf_path">配置文件目录:</label>
+                        <input id="conf_path" type="text" />
+
+                        <label for="cache_dir">缓存文件目录:</label>
+                        <input id="cache_dir" type="text" value="music/cache" />
+
+                        <label for="temp_path">临时文件目录:</label>
+                        <input id="temp_path" type="text" value="music/tmp" />
+
+
+                    </div>
+                    </div>
+                </div>
+
+                <div class="config-tab-content setting-panel" id="tab-playback" role="tabpanel">
+                    <div class="card-content">
+                    <div class="rows">
+                        <label for="delay_sec">下一首歌延迟播放秒数(支持负数):</label>
+                        <input id="delay_sec" type="number" value="0" />
+
+                        <label for="continue_play">启用继续播放(可能导致兼容性问题):</label>
+                        <select id="continue_play">
+                            <option value="true">true</option>
+                            <option value="false" selected>false</option>
+                        </select>
+
+                        <label for="use_music_api">型号兼容模式:</label>
+                        <select id="use_music_api">
+                            <option value="true">true</option>
+                            <option value="false" selected>false</option>
+                        </select>
+
+                        <label for="use_music_audio_id">触屏版显示歌曲ID:</label>
+                        <input id="use_music_audio_id" type="text" value="1582971365183456177" />
+
+                        <label for="use_music_id">触屏版显示歌曲分段ID:</label>
+                        <input id="use_music_id" type="text" value="355454500" />
+
+                        <label for="active_cmd">允许唤醒的命令:</label>
+                        <input id="active_cmd" type="text"
+                            value="play,set_play_type_rnd,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,set_play_type_one,set_play_type_all,set_play_type_sin,set_play_type_seq,gen_music_list,add_to_favorites,del_from_favorites,singer_play" />
+                    </div>
+                    </div>
+                </div>
+
+                <div class="config-tab-content setting-panel" id="tab-search" role="tabpanel">
+                    <div class="card-content">
+                    <div class="rows">
+                        <label for="fuzzy_match_cutoff">模糊匹配阈值(0.1~0.9):</label>
+                        <input id="fuzzy_match_cutoff" type="number" value="0.6" />
+
+                        <label for="enable_fuzzy_match">开启模糊搜索:</label>
+                        <select id="enable_fuzzy_match">
+                            <option value="true" selected>true</option>
+                            <option value="false">false</option>
+                        </select>
+                    </div>
+                    </div>
+                </div>
+
+                <div class="config-tab-content setting-panel" id="tab-audio" role="tabpanel">
+                    <div class="card-content">
+                    <div class="rows">
+                        <label for="get_duration_type">获取时长方式:</label>
+                        <select id="get_duration_type">
+                            <option value="ffprobe" selected>ffprobe</option>
+                        </select>
+
+                        <label for="loudnorm">均衡歌曲音量大小(loudnorm滤镜):</label>
+                        <input id="loudnorm" type="text" placeholder="loudnorm=I=-14:TP=-1.5:LRA=6" />
+
+                        <label for="remove_id3tag">去除MP3 ID3v2和填充:</label>
+                        <select id="remove_id3tag">
+                            <option value="true">true</option>
+                            <option value="false" selected>false</option>
+                        </select>
+
+                        <label for="convert_to_mp3">转换为MP3:</label>
+                        <select id="convert_to_mp3">
+                            <option value="true">true</option>
+                            <option value="false" selected>false</option>
+                        </select>
+
+                        <label for="enable_save_tag">启用ID3标签写入文件:</label>
+                        <select id="enable_save_tag">
+                            <option value="true">true</option>
+                            <option value="false" selected>false</option>
+                        </select>
+                    </div>
+                    </div>
+                </div>
+
+                <div class="config-tab-content setting-panel" id="tab-tts" role="tabpanel">
+                    <div class="card-content">
+                    <div class="rows">
+                        <label for="edge_tts_voice">Edge-TTS 语音角色:</label>
+                        <select id="edge_tts_voice">
+                            <option value="">不使用(默认)</option>
+                            <option value="zh-CN-XiaoxiaoNeural">晓晓 (女声,温柔)</option>
+                            <option value="zh-CN-XiaoyiNeural" selected>
+                                晓伊 (女声,活泼)
+                            </option>
+                            <option value="zh-CN-YunjianNeural">云健 (男声,成熟)</option>
+                            <option value="zh-CN-YunxiNeural">云希 (男声,阳光)</option>
+                            <option value="zh-CN-YunxiaNeural">云夏 (男声,少年)</option>
+                            <option value="zh-CN-YunyangNeural">云扬 (男声,新闻)</option>
+                            <option value="zh-CN-liaoning-XiaobeiNeural">
+                                晓北 (女声,东北)
+                            </option>
+                            <option value="zh-CN-shaanxi-XiaoniNeural">
+                                晓妮 (女声,陕西)
+                            </option>
+                            <option value="zh-HK-HiuGaaiNeural">曉佳 (女声,粤语)</option>
+                            <option value="zh-HK-HiuMaanNeural">曉曼 (女声,粤语)</option>
+                            <option value="zh-HK-WanLungNeural">雲龍 (男声,粤语)</option>
+                            <option value="zh-TW-HsiaoChenNeural">曉臻 (女声,台湾)</option>
+                            <option value="zh-TW-YunJheNeural">雲哲 (男声,台湾)</option>
+                            <option value="zh-TW-HsiaoYuNeural">曉雨 (女声,台湾)</option>
+                        </select>
+
+                        <label for="stop_tts_msg">停止提示音:</label>
+                        <input id="stop_tts_msg" type="text" value="收到,再见" />
+
+                        <label for="play_type_one_tts_msg">单曲循环提示音:</label>
+                        <input id="play_type_one_tts_msg" type="text" value="已经设置为单曲循环" />
+
+                        <label for="play_type_all_tts_msg">全部循环提示音:</label>
+                        <input id="play_type_all_tts_msg" type="text" value="已经设置为全部循环" />
+
+                        <label for="play_type_rnd_tts_msg">随机播放提示音:</label>
+                        <input id="play_type_rnd_tts_msg" type="text" value="已经设置为随机播放" />
+
+                        <label for="play_type_sin_tts_msg">单曲播放提示音:</label>
+                        <input id="play_type_sin_tts_msg" type="text" value="已经设置为单曲播放" />
+
+                        <label for="play_type_seq_tts_msg">顺序播放提示音:</label>
+                        <input id="play_type_seq_tts_msg" type="text" value="已经设置为顺序播放" />
+                    </div>
+                    </div>
+                </div>
+
+                <div class="config-tab-content setting-panel" id="tab-voicecmd" role="tabpanel">
+                    <div class="card-content">
+                    <div class="rows">
+
+
+                        <label for="keywords_play">播放歌曲口令:</label>
+                        <input id="keywords_play" type="text" value="播放歌曲,放歌曲" />
+
+                        <label for="keywords_playlist">播放列表口令:</label>
+                        <input id="keywords_playlist" type="text" value="播放列表,播放歌单" />
+
+                        <label for="keywords_stop">停止口令:</label>
+                        <input id="keywords_stop" type="text" value="关机,暂停,停止,停止播放" />
+
+                        <label for="keywords_singer_play">播放歌手口令(会搜索歌手并创建歌单):</label>
+                        <input id="keywords_singer_play" type="text" value="播放歌手" />
+                    </div>
+                    </div>
+                </div>
+
+
+
+                <div class="config-tab-content setting-panel" id="tab-device" role="tabpanel">
+                    <div class="card-content">
+                    <div class="rows">
+                        <label for="group_list">设备分组配置（不推荐，声音不同步）:<a href="https://xdocs.hanxi.cc/issues/366.html"
+                                target="_blank">文档</a></label>
+                        <input id="group_list" type="text" placeholder="did1:组名1,did2:组名1,did3:组名2" />
+
+                        <label for="enable_pull_ask">获取对话记录:</label>
+                        <select id="enable_pull_ask">
+                            <option value="true">true</option>
+                            <option value="false selected">false</option>
+                        </select>
+
+                        <label for="pull_ask_sec">获取对话记录间隔(秒):</label>
+                        <input id="pull_ask_sec" type="number" value="1" />
+
+                        <label for="get_ask_by_mina">特殊型号获取对话记录:</label>
+                        <select id="get_ask_by_mina">
+                            <option value="true">true</option>
+                            <option value="false" selected>false</option>
+                        </select>
+                    </div>
+                    </div>
+                </div>
+
+
+
+                <div class="config-tab-content setting-panel" id="tab-other" role="tabpanel">
+                    <div class="card-content">
+                    <div class="rows">
+                        <label for="verbose">是否开启调试日志:</label>
+                        <select id="verbose">
+                            <option value="true">true</option>
+                            <option value="false" selected>false</option>
+                        </select>
+
+                        <label for="log_file">日志路径:</label>
+                        <input id="log_file" type="text" value="xiaoemby.log" />
+                    </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="setting-footer">
+        <div class="button-section">
+            <div class="section-header collapsed" id="operationToggle">
+                <h3 class="button-section-title">功能操作</h3>
+                <span class="section-toggle-icon">▼</span>
+            </div>
+            <div class="section-content collapsed" id="operationContent">
+                <div class="button-grid">
+
+                    <button id="clear_cache">
+                        <span class="material-icons">delete_sweep</span>
+                        <span>清空缓存</span>
+                    </button>
+                    <button id="cleantempdir">
+                        <span class="material-icons">folder_delete</span>
+                        <span>清空临时目录</span>
+                    </button>
+                    <a href="/downloadlog">
+                        <button>
+                            <span class="material-icons">download</span>
+                            <span>下载日志文件</span>
+                        </button>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+
+
+    </div>
+    <footer>
+        <p>
+            Powered by
+            <a href="https://github.com/backtracker/xiaoemby" target="_blank">XiaoEmby</a>
+        </p>
+    </footer>
+</body>
+
+</html>

@@ -1,0 +1,301 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from dataclasses import asdict, dataclass, field
+from typing import get_type_hints
+from xiaomusic.const import PLAY_TYPE_ALL, PLAY_TYPE_ONE, PLAY_TYPE_RND, PLAY_TYPE_SEQ, PLAY_TYPE_SIN
+from xiaomusic.utils.system_utils import validate_proxy
+
+
+# 命令匹配字典
+command_action_dict = {
+    r"(?:播放)?下一首": "play_next",
+    r"(?:播放)?上一首": "play_prev",
+    r"播放列表第(?P<index>\d+)首(?:歌(?:曲)?|音乐)?": "play_music_list_index",
+    r"播放我(?P<is_favorite>喜欢)的(?P<artist>.*)的(?:歌(?:曲)?|音乐)?": "play",
+    r"播放我(?P<is_favorite>喜欢)的(?:歌(?:曲)?|音乐)?": "play",
+    r"播放(?P<artist>.*?)的(?:专辑)?(?P<album>.*?)(?:专辑)?(?:里的|中的)(?:歌(?:曲)?|音乐)?(?P<name>.*?)(?:歌(?:曲)?|音乐)?$": "play",
+    r"播放(?P<artist>.*?)的专辑(?P<album>.*?)$": "play",
+    r"播放(?P<artist>.*?)的(?P<album>.*?)专辑$": "play",
+    r"播放专辑(?P<album>.*)": "play",
+    r"播放(?P<artist>.*)的(?:歌(?:曲)?|音乐)?": "play",
+    r"播放(?P<artist>.*)的(?P<genre>.*)风格的(?:歌(?:曲)?|音乐)?": "play",
+    r"播放(?P<artist>.*)的(?P<name>.*?)(?:歌(?:曲)?|音乐)?": "play",
+    r"播放(?P<genre>.*)风格的(?:歌(?:曲)?|音乐)?": "play",
+    r"播放(?:歌(?:曲)?|音乐)?(?P<name>.*)(?:歌(?:曲)?|音乐)?": "play",
+    r"(?:播放|来点)(?:音乐|歌曲)|嗨起来|high起来": "play",
+    r"关机|暂停|停止|闭嘴": "stop",
+    r"^(?P<minute>.+?)分钟后关机": "stop_after_minute",
+    r"顺序播放": "set_play_type_seq",
+    r"单曲播放": "set_play_type_sin",
+    r"单曲循环": "set_play_type_one",
+    r"全部循环": "set_play_type_all",
+    r"随机播放": "set_play_type_rnd",
+    r"刷新(?:播放)?列表": "gen_music_list",
+}
+
+
+@dataclass
+class Device:
+    did: str = ""
+    device_id: str = ""
+    hardware: str = ""
+    name: str = ""
+    play_type: int = PLAY_TYPE_RND
+    cur_music: str = ""
+    cur_playlist: str = ""
+    playlist2music: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class Config:
+    account: str = os.getenv("MI_USER", "")
+    password: str = os.getenv("MI_PASS", "")
+    mi_did: str = os.getenv("MI_DID", "")  # 逗号分割支持多设备
+    cookie: str = ""
+    verbose: bool = os.getenv("XIAOMUSIC_VERBOSE", "").lower() == "true"
+    temp_path: str = os.getenv("XIAOMUSIC_TEMP_PATH", "temp")
+    conf_path: str = os.getenv("XIAOMUSIC_CONF_PATH", "conf")
+    cache_dir: str = os.getenv("XIAOMUSIC_CACHE_DIR", "cache")
+    hostname: str = os.getenv("XIAOMUSIC_HOSTNAME", "")
+    port: int = int(os.getenv("XIAOMUSIC_PORT", "8090"))  # 监听端口
+    public_port: int = int(os.getenv("XIAOMUSIC_PUBLIC_PORT", 58090))  # 歌曲访问端口
+    proxy: str = os.getenv("XIAOMUSIC_PROXY", None)
+
+    # Emby配置
+    emby_host: str = os.getenv("XIAOMUSIC_EMBY_HOST", "")
+    emby_user_id: str = os.getenv("XIAOMUSIC_EMBY_USER_ID", "")
+    emby_api_key: str = os.getenv("XIAOMUSIC_EMBY_API_KEY", "")
+
+    active_cmd: str = os.getenv(
+        "XIAOMUSIC_ACTIVE_CMD",
+        "play,set_play_type_rnd,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,set_play_type_one,set_play_type_all,set_play_type_sin,set_play_type_seq,gen_music_list,add_to_favorites,del_from_favorites,online_play,singer_play",
+    )
+    custom_play_list_json: str = os.getenv("XIAOMUSIC_CUSTOM_PLAY_LIST_JSON", "")
+
+    key_word_dict: dict[str, str] = field(default_factory=dict)
+    use_music_api: bool = (
+        os.getenv("XIAOMUSIC_USE_MUSIC_API", "false").lower() == "true"
+    )
+    use_music_audio_id: str = os.getenv(
+        "XIAOMUSIC_USE_MUSIC_AUDIO_ID", "1582971365183456177"
+    )
+    use_music_id: str = os.getenv("XIAOMUSIC_USE_MUSIC_ID", "355454500")
+    log_file: str = os.getenv("XIAOMUSIC_LOG_FILE", "xiaoemby.log")
+    # 模糊搜索匹配的最低相似度阈值
+    fuzzy_match_cutoff: float = float(os.getenv("XIAOMUSIC_FUZZY_MATCH_CUTOFF", "0.6"))
+    # 开启模糊搜索
+    enable_fuzzy_match: bool = (
+        os.getenv("XIAOMUSIC_ENABLE_FUZZY_MATCH", "true").lower() == "true"
+    )
+    stop_tts_msg: str = os.getenv("XIAOMUSIC_STOP_TTS_MSG", "收到,再见")
+    enable_config_example: bool = False
+
+
+    keywords_play: str = os.getenv("XIAOMUSIC_KEYWORDS_PLAY", "播放歌曲,放歌曲")
+    keywords_singer_play: str = os.getenv("XIAOMUSIC_KEYWORDS_SINGER_PLAY", "播放歌手")
+    keywords_stop: str = os.getenv("XIAOMUSIC_KEYWORDS_STOP", "关机,暂停,停止,停止播放")
+    keywords_playlist: str = os.getenv(
+        "XIAOMUSIC_KEYWORDS_PLAYLIST", "播放列表,播放歌单"
+    )
+    enable_force_stop: bool = (
+        os.getenv("XIAOMUSIC_ENABLE_FORCE_STOP", "false").lower() == "true"
+    )
+    devices: dict[str, Device] = field(default_factory=dict)
+    group_list: str = os.getenv(
+        "XIAOMUSIC_GROUP_LIST", ""
+    )  # did1:group_name,did2:group_name
+
+    delay_sec: int = int(os.getenv("XIAOMUSIC_DELAY_SEC", 0))  # 下一首歌延迟播放秒数
+    continue_play: bool = (
+        os.getenv("XIAOMUSIC_CONTINUE_PLAY", "false").lower() == "true"
+    )
+
+    pull_ask_sec: int = int(os.getenv("XIAOMUSIC_PULL_ASK_SEC", "1"))
+    enable_pull_ask: bool = (
+        os.getenv("XIAOMUSIC_ENABLE_PULL_ASK", "false").lower() == "true"
+    )
+    crontab_json: str = os.getenv("XIAOMUSIC_CRONTAB_JSON", "")  # 定时任务
+
+    get_ask_by_mina: bool = (
+        os.getenv("XIAOMUSIC_GET_ASK_BY_MINA", "false").lower() == "true"
+    )
+    play_type_one_tts_msg: str = os.getenv(
+        "XIAOMUSIC_PLAY_TYPE_ONE_TTS_MSG", "已经设置为单曲循环"
+    )
+    play_type_all_tts_msg: str = os.getenv(
+        "XIAOMUSIC_PLAY_TYPE_ALL_TTS_MSG", "已经设置为全部循环"
+    )
+    play_type_rnd_tts_msg: str = os.getenv(
+        "XIAOMUSIC_PLAY_TYPE_RND_TTS_MSG", "已经设置为随机播放"
+    )
+    play_type_sin_tts_msg: str = os.getenv(
+        "XIAOMUSIC_PLAY_TYPE_SIN_TTS_MSG", "已经设置为单曲播放"
+    )
+    play_type_seq_tts_msg: str = os.getenv(
+        "XIAOMUSIC_PLAY_TYPE_SEQ_TTS_MSG", "已经设置为顺序播放"
+    )
+    recently_added_playlist_len: int = int(
+        os.getenv("XIAOMUSIC_RECENTLY_ADDED_PLAYLIST_LEN", "50")
+    )
+
+    # edge-tts 语音角色
+    edge_tts_voice: str = os.getenv("XIAOMUSIC_EDGE_TTS_VOICE", "zh-CN-XiaoyiNeural")
+    # 是否启用定时清理临时文件
+    enable_auto_clean_temp: bool = (
+        os.getenv("XIAOMUSIC_ENABLE_AUTO_CLEAN_TEMP", "true").lower() == "true"
+    )
+    qrcode_timeout: int = os.getenv("QRCODE_TIMEOUT", 120)
+
+    def append_keyword(self, keys, action):
+        for key in keys.split(","):
+            if key:
+                self.key_word_dict[key] = action
+
+
+
+    def init(self):
+        # 重置为默认空字典
+        self.key_word_dict = {}
+        self.append_keyword(self.keywords_play, "play")
+        self.append_keyword(self.keywords_singer_play, "singer_play")
+        self.append_keyword(self.keywords_stop, "stop")
+        self.append_keyword(self.keywords_playlist, "play_music_list")
+
+        # 转换数据
+        self._active_cmd_arr = self.active_cmd.split(",") if self.active_cmd else []
+        self._exclude_dirs_set = set()
+
+    def __post_init__(self) -> None:
+        if self.proxy:
+            validate_proxy(self.proxy)
+        if self.hostname:
+            if not self.hostname.startswith(("http://", "https://")):
+                self.hostname = f"http://{self.hostname}"  # 默认 http
+
+        self.init()
+        # 保存配置到 config-example.json 文件
+        if self.enable_config_example:
+            with open("config-example.json", "w") as f:
+                data = asdict(self)
+                json.dump(data, f, ensure_ascii=False, indent=2)
+
+    @classmethod
+    def from_options(cls, options: argparse.Namespace) -> Config:
+        config = {}
+        if options.config:
+            config = cls.read_from_file(options.config)
+        for key, value in vars(options).items():
+            if value is not None and key in cls.__dataclass_fields__:
+                config[key] = value
+        return cls(**config)
+
+    @classmethod
+    def convert_value(cls, k, v, type_hints):
+        if v is not None and k in type_hints:
+            expected_type = type_hints[k]
+            try:
+                if expected_type is bool:
+                    converted_value = False
+                    if str(v).lower() == "true":
+                        converted_value = True
+                elif expected_type == dict[str, Device]:
+                    converted_value = {}
+                    for kk, vv in v.items():
+                        converted_value[kk] = Device(**vv)
+                else:
+                    converted_value = expected_type(v)
+                return converted_value
+            except (ValueError, TypeError) as e:
+                print(f"Error converting {k}:{v} to {expected_type}: {e}")
+        return None
+
+    @classmethod
+    def read_from_file(cls, config_path: str) -> dict:
+        result = {}
+        with open(config_path, "rb") as f:
+            data = json.load(f)
+            type_hints = get_type_hints(cls)
+
+            for k, v in data.items():
+                converted_value = cls.convert_value(k, v, type_hints)
+                if converted_value is not None:
+                    result[k] = converted_value
+        return result
+
+    def update_config(self, data):
+        type_hints = get_type_hints(self, globals(), locals())
+
+        for k, v in data.items():
+            converted_value = self.convert_value(k, v, type_hints)
+            if converted_value is not None:
+                setattr(self, k, converted_value)
+        self.init()
+
+    def get_active_cmd_arr(self):
+        return self._active_cmd_arr
+
+    def get_exclude_dirs_set(self):
+        return self._exclude_dirs_set
+
+    # 获取设置文件
+    def getsettingfile(self):
+        # 兼容旧配置空的情况
+        if not self.conf_path:
+            self.conf_path = "conf"
+        if not os.path.exists(self.conf_path):
+            os.makedirs(self.conf_path)
+        filename = os.path.join(self.conf_path, "setting.json")
+        return filename
+
+    @property
+    def tag_cache_path(self):
+        if (len(self.cache_dir) > 0) and (not os.path.exists(self.cache_dir)):
+            os.makedirs(self.cache_dir)
+        filename = os.path.join(self.cache_dir, "tag_cache.json")
+        return filename
+
+    @property
+    def picture_cache_path(self):
+        cache_path = os.path.join(self.cache_dir, "picture_cache")
+        if not os.path.exists(cache_path):
+            os.makedirs(cache_path)
+        return cache_path
+
+    @property
+    def temp_dir(self):
+        if not os.path.exists(self.temp_path):
+            os.makedirs(self.temp_path)
+        return self.temp_path
+
+    def get_play_type_tts(self, play_type):
+        if play_type == PLAY_TYPE_ONE:
+            return self.play_type_one_tts_msg
+        if play_type == PLAY_TYPE_ALL:
+            return self.play_type_all_tts_msg
+        if play_type == PLAY_TYPE_RND:
+            return self.play_type_rnd_tts_msg
+        if play_type == PLAY_TYPE_SIN:
+            return self.play_type_sin_tts_msg
+        if play_type == PLAY_TYPE_SEQ:
+            return self.play_type_seq_tts_msg
+        return ""
+
+    def get_ignore_tag_dirs(self):
+        return []
+
+    def get_one_device_id(self):
+        """获取一个设备ID
+
+        Returns:
+            str: 第一个设备的device_id，如果没有设备则返回空字符串
+        """
+        device = next(iter(self.devices.values()), None)
+        return device.device_id if device else ""
+
+    def get_self_netloc(self):
+        """获取网络地址"""
+        host = self.hostname.split("//", 1)[1]
+        return f"{host}:{self.public_port}"

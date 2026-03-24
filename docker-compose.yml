@@ -1,0 +1,14 @@
+version: '3'
+
+services:
+  xiaoemby:
+    image: xiaoemby:0.0.1
+    container_name: xiaoemby
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./conf:/app/conf
+      - ./music:/app/music
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped

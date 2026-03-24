@@ -1,0 +1,589 @@
+// 获取二维码的函数（点击「获取二维码」后再请求并显示）
+let qrcodeCountdownTimer = null;
+const DEFAULT_QRCODE_EXPIRE_SECONDS = 120;
+
+function stopQRCodeCountdown() {
+  if (qrcodeCountdownTimer) {
+    clearInterval(qrcodeCountdownTimer);
+    qrcodeCountdownTimer = null;
+  }
+}
+
+function startQRCodeCountdown($qrcodeStatus, $qrcodeImage, expireSeconds) {
+  stopQRCodeCountdown();
+
+  let remainSeconds = Number(expireSeconds);
+  if (!Number.isFinite(remainSeconds) || remainSeconds <= 0) {
+    remainSeconds = DEFAULT_QRCODE_EXPIRE_SECONDS;
+  }
+  remainSeconds = Math.floor(remainSeconds);
+
+  const updateCountdownText = function () {
+    if (remainSeconds <= 0) {
+      stopQRCodeCountdown();
+      $qrcodeImage.addClass("qrcode-image-hidden");
+      $qrcodeStatus.text("二维码已过期，请点击“刷新二维码”重新获取");
+      return;
+    }
+    $qrcodeStatus.text(
+      "请使用米家App扫码登录，二维码将在 " + remainSeconds + " 秒后过期"
+    );
+    remainSeconds -= 1;
+  };
+
+  updateCountdownText();
+  qrcodeCountdownTimer = setInterval(updateCountdownText, 1000);
+}
+
+function fetchQRCode() {
+  var $qrcodeImage = $("#qrcode-image");
+  var $qrcodeStatus = $("#qrcode-status");
+  var $refreshBtn = $("#refresh-qrcode");
+
+  if (!$qrcodeImage.length || !$qrcodeStatus.length) return;
+  stopQRCodeCountdown();
+
+  $qrcodeImage.attr("src", "");
+  $qrcodeStatus.text("正在生成二维码...");
+  $refreshBtn.text("刷新二维码");
+
+  $.get("/xiaoemby/get_qrcode")
+    .done(function (data) {
+      if (data.success) {
+        if (data.already_logged_in) {
+          $qrcodeStatus.text(data.message || "已登录，无需更新");
+          $qrcodeImage.addClass("qrcode-image-hidden");
+        } else {
+          $qrcodeImage.attr("src", data.qrcode_url || "").removeClass("qrcode-image-hidden");
+          startQRCodeCountdown($qrcodeStatus, $qrcodeImage, data.expire_seconds);
+        }
+      } else {
+        $qrcodeStatus.text(data.message || "二维码生成失败，请稍后重试");
+      }
+    })
+    .fail(function (xhr) {
+      console.error("获取二维码失败:", xhr);
+      $qrcodeStatus.text("网络错误，请检查连接");
+    });
+}
+
+// ============ 字体加载检测 ============
+// 检测字体加载完成，避免图标文字闪烁
+(function () {
+  // 使用 Promise.race 实现超时保护
+  const fontLoadTimeout = new Promise(resolve => {
+    setTimeout(() => {
+      console.warn('字体加载超时，强制显示图标');
+      resolve('timeout');
+    }, 3000);
+  });
+
+  const fontLoadReady = document.fonts.ready.then(() => 'loaded');
+
+  Promise.race([fontLoadReady, fontLoadTimeout]).then((result) => {
+    document.body.classList.add('fonts-loaded');
+    if (result === 'loaded') {
+      console.log('Material Icons 字体加载完成');
+    }
+  }).catch((error) => {
+    console.error('字体加载检测失败:', error);
+    // 出错时也显示图标，避免永久隐藏
+    document.body.classList.add('fonts-loaded');
+  });
+})();
+
+$(function () {
+  $("#refresh-qrcode").on("click", fetchQRCode);
+
+
+
+  // 遍历所有的select元素，默认选中只有1个选项的
+  const autoSelectOne = () => {
+    $("select").each(function () {
+      // 如果select元素仅有一个option子元素
+      if ($(this).children("option").length === 1) {
+        // 选中这个option
+        $(this).find("option").prop("selected", true);
+      }
+    });
+  };
+
+  function updateCheckbox(selector, mi_did, device_list, accountPassValid) {
+    // 清除现有的内容
+    $(selector).empty();
+
+    // 将 mi_did 字符串通过逗号分割转换为数组，以便于判断默认选中项
+    var selected_dids = mi_did.split(",");
+
+    //如果device_list为空，则可能是未设置小米账号密码或者已设置密码，但是没有过小米验证，此处需要提示用户
+    if (device_list.length == 0) {
+      const loginTips = accountPassValid
+        ? `<div class="login-tips">未发现可用的小爱设备，请检查账号密码是否输错，并关闭加速代理或在<a href="https://www.mi.com">小米官网</a>登陆过人脸或滑块验证。如仍未解决。请根据<a href="https://github.com/hanxi/xiaomusic/issues/99">FAQ</a>的内容解决问题。</div>`
+        : `<div class="login-tips">未发现可用的小爱设备，请先在下面的输入框中设置小米的<b>账号、密码或者cookie</b></div>`;
+      $(selector).append(loginTips);
+      return;
+    }
+    $.each(device_list, function (index, device) {
+      var did = device.miotDID;
+      var hardware = device.hardware;
+      var name = device.name;
+      // 创建复选框元素
+      var checkbox = $("<input>", {
+        type: "checkbox",
+        id: did,
+        value: `${did}`,
+        class: "custom-checkbox", // 添加样式类
+        // 如果mi_did中包含了该did，则默认选中
+        checked: selected_dids.indexOf(did) !== -1,
+      });
+
+      // 创建标签元素
+      var label = $("<label>", {
+        for: did,
+        class: "checkbox-label", // 添加样式类
+        text: `【${hardware} ${did}】${name}`, // 设定标签内容
+      });
+
+      // 将复选框和标签添加到目标选择器元素中
+      $(selector).append(checkbox).append(label);
+    });
+  }
+
+  function getSelectedDids(containerSelector) {
+    var selectedDids = [];
+
+    // 仅选择给定容器中选中的复选框
+    $(containerSelector + " .custom-checkbox:checked").each(function () {
+      var did = this.value;
+      selectedDids.push(did);
+    });
+
+    return selectedDids.join(",");
+  }
+
+  // 获取设备列表（供“获取设备列表”按钮和初始加载共用）
+  function fetchDeviceList(callback) {
+    $.get("/getsetting?need_device_list=true", function (data, status) {
+      if (typeof callback === "function") {
+        callback(data, status);
+      }
+    }).fail(function (xhr) {
+      alert(
+        "获取设备列表失败: " +
+          (xhr.responseJSON && xhr.responseJSON.detail
+            ? xhr.responseJSON.detail
+            : xhr.statusText)
+      );
+    });
+  }
+
+  // 初始加载：拉取配置并填充表单与设备列表
+  fetchDeviceList(function (data, status) {
+    console.log(data, status);
+    var accountPassValid = data.account && data.password;
+    updateCheckbox("#mi_did", data.mi_did || "", data.device_list || [], accountPassValid);
+
+    // 处理hostname和public_port，拆分到新的字段
+    if (data.hostname) {
+      const urlParts = data.hostname.match(/^(https?:\/\/)?([^:\/]+)(:\d+)?/);
+      if (urlParts) {
+        const protocol = urlParts[1] ? urlParts[1].replace("://", "") : "http";
+        const host = urlParts[2];
+        $("#protocol").val(protocol);
+        $("#host").val(host);
+      }
+    }
+    // 强制使用public_port字段的值，如果不存在则使用默认值
+    $("#port").val(data.public_port || "8090");
+
+    // 处理Emby服务器地址，拆分到新的字段
+    if (data.emby_host) {
+      const urlParts = data.emby_host.match(/^(https?:\/\/)?([^:\/]+)(:\d+)?/);
+      if (urlParts) {
+        const protocol = urlParts[1] ? urlParts[1].replace("://", "") : "http";
+        const host = urlParts[2];
+        const port = urlParts[3] ? urlParts[3].replace(":", "") : "8096";
+        $("#emby_protocol").val(protocol);
+        $("#emby_host_input").val(host);
+        $("#emby_port").val(port);
+      }
+    }
+
+    // 处理其他配置项
+    for (const key in data) {
+      if (key === "hostname" || key === "public_port" || key === "port" || key === "emby_host") continue; // 跳过已经处理的字段
+      const $element = $("#" + key);
+      if ($element.length) {
+        if (data[key] === true) {
+          $element.val("true");
+        } else if (data[key] === false) {
+          $element.val("false");
+        } else {
+          $element.val(data[key]);
+        }
+      }
+    }
+
+    autoSelectOne();
+  });
+
+    $("#update-devices").on("click", function () {
+    var $btn = $(this);
+    var oldText = $btn.text();
+    $btn.prop("disabled", true).text("更新中…");
+    $.get("/device_list")
+      .done(function (data) {
+        var currentMiDid = getSelectedDids("#mi_did");
+        var raw = data.devices || {};
+        var deviceList = Object.keys(raw).map(function (did) {
+          var d = raw[did];
+          return { miotDID: d.did || did, hardware: d.hardware || "", name: d.name || "" };
+        });
+        updateCheckbox("#mi_did", currentMiDid, deviceList);
+      })
+      .fail(function (xhr) {
+        alert("更新设备列表失败: " + (xhr.responseJSON && xhr.responseJSON.detail ? xhr.responseJSON.detail : xhr.statusText));
+      })
+      .always(function () {
+        $btn.prop("disabled", false).text(oldText);
+      });
+  });
+
+
+  $(".save-button").on("click", () => {
+    var setting = $("#setting");
+    var inputs = setting.find("input, select, textarea");
+    var data = {};
+    var specialFields = {};
+    var embySpecialFields = {};
+    inputs.each(function () {
+      var id = this.id;
+      if (id) {
+        if (id === "protocol" || id === "host" || id === "port") {
+          specialFields[id] = $(this).val();
+        } else if (id === "emby_protocol" || id === "emby_host_input" || id === "emby_port") {
+          embySpecialFields[id] = $(this).val();
+        } else {
+          data[id] = $(this).val();
+        }
+      }
+    });
+    
+    // 合并特殊字段为hostname和public_port
+    const protocol = specialFields.protocol || "http";
+    const host = specialFields.host || "localhost";
+    const port = specialFields.port || "7777";
+    data["hostname"] = `${protocol}://${host}`;
+    data["public_port"] = port;
+    
+    // 合并Emby特殊字段为emby_host
+    const embyProtocol = embySpecialFields.emby_protocol || "http";
+    const embyHost = embySpecialFields.emby_host_input || "127.0.0.1";
+    const embyPort = embySpecialFields.emby_port || "48096";
+    data["emby_host"] = `${embyProtocol}://${embyHost}:${embyPort}`;
+    
+    var did_list = getSelectedDids("#mi_did");
+    data["mi_did"] = did_list;
+    console.log(data);
+
+    $.ajax({
+      type: "POST",
+      url: "/savesetting",
+      contentType: "application/json",
+      data: JSON.stringify(data),
+      success: (msg) => {
+        alert(msg);
+        location.reload();
+      },
+      error: (msg) => {
+        alert(msg);
+      },
+    });
+  });
+
+  $("#clear_cache").on("click", () => {
+    localStorage.clear();
+    alert("清除成功");
+  });
+
+  $("#cleantempdir").on("click", () => {
+    $.ajax({
+      type: "POST",
+      url: "/xiaoemby/file/cleantempdir",
+      contentType: "application/json",
+      data: JSON.stringify({}),
+      success: (msg) => {
+        alert(msg.ret);
+      },
+      error: (msg) => {
+        alert(msg);
+      },
+    });
+  });
+
+
+
+  // 高级配置折叠功能
+  const toggleBtn = $("#advancedConfigToggle");
+  const content = $("#advancedConfigContent");
+
+  // 从localStorage读取折叠状态，默认折叠
+  const isCollapsed =
+    localStorage.getItem("advancedConfigCollapsed") !== "false";
+
+  // 初始化状态
+  if (isCollapsed) {
+    toggleBtn.addClass("collapsed");
+    content.addClass("collapsed");
+  }
+
+  // 点击切换折叠状态
+  toggleBtn.on("click", function () {
+    const willCollapse = !toggleBtn.hasClass("collapsed");
+
+    if (willCollapse) {
+      toggleBtn.addClass("collapsed");
+      content.addClass("collapsed");
+      localStorage.setItem("advancedConfigCollapsed", "true");
+    } else {
+      toggleBtn.removeClass("collapsed");
+      content.removeClass("collapsed");
+      localStorage.setItem("advancedConfigCollapsed", "false");
+    }
+  });
+
+  // Tab 切换功能
+  $(".auth-tab-button").on("click", function () {
+    const tabName = $(this).data("tab");
+
+    // 移除所有 active 类
+    $(".auth-tab-button").removeClass("active");
+    $(".auth-tab-content").removeClass("active");
+
+    // 添加当前 active 类
+    $(this).addClass("active");
+    $("#tab-" + tabName).addClass("active");
+  });
+
+  // 高级配置 Tab 切换：委托到高级配置容器，阻止冒泡并强制切换面板
+  $("#advancedConfigContent").on("click", ".config-tab-button", function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    var $btn = $(this);
+    var panelId = $btn.attr("aria-controls") || ("tab-" + $btn.data("tab"));
+    if (!panelId) return;
+
+    $("#advancedConfigContent .config-tab-button").removeClass("active").attr("aria-selected", "false");
+    $btn.addClass("active").attr("aria-selected", "true");
+
+    $("#advancedConfigContent .config-tab-content").removeClass("active");
+    var $panel = $("#" + panelId);
+    if ($panel.length) {
+      $panel.addClass("active");
+    }
+  });
+
+  // 功能操作区域折叠功能
+  const operationToggle = $("#operationToggle");
+  const operationContent = $("#operationContent");
+
+  // 从localStorage读取折叠状态，默认折叠
+  const operationCollapsedState = localStorage.getItem("operationCollapsed");
+  const isOperationCollapsed =
+    operationCollapsedState === null || operationCollapsedState === "true";
+
+  // 初始化状态
+  if (!isOperationCollapsed) {
+    // 如果用户之前展开过，则移除 collapsed 类
+    operationToggle.removeClass("collapsed");
+    operationContent.removeClass("collapsed");
+  }
+
+  // 点击切换折叠状态
+  operationToggle.on("click", function () {
+    const willCollapse = !operationToggle.hasClass("collapsed");
+
+    if (willCollapse) {
+      operationToggle.addClass("collapsed");
+      operationContent.addClass("collapsed");
+      localStorage.setItem("operationCollapsed", "true");
+    } else {
+      operationToggle.removeClass("collapsed");
+      operationContent.removeClass("collapsed");
+      localStorage.setItem("operationCollapsed", "false");
+    }
+  });
+
+  // 工具链接区域折叠功能
+  const toolsToggle = $("#toolsToggle");
+  const toolsContent = $("#toolsContent");
+
+  // 从localStorage读取折叠状态，默认折叠
+  const toolsCollapsedState = localStorage.getItem("toolsCollapsed");
+  const isToolsCollapsed =
+    toolsCollapsedState === null || toolsCollapsedState === "true";
+
+  // 初始化状态
+  if (!isToolsCollapsed) {
+    // 如果用户之前展开过，则移除 collapsed 类
+    toolsToggle.removeClass("collapsed");
+    toolsContent.removeClass("collapsed");
+  }
+
+  // 点击切换折叠状态
+  toolsToggle.on("click", function () {
+    const willCollapse = !toolsToggle.hasClass("collapsed");
+
+    if (willCollapse) {
+      toolsToggle.addClass("collapsed");
+      toolsContent.addClass("collapsed");
+      localStorage.setItem("toolsCollapsed", "true");
+    } else {
+      toolsToggle.removeClass("collapsed");
+      toolsContent.removeClass("collapsed");
+      localStorage.setItem("toolsCollapsed", "false");
+    }
+  });
+
+  // ============ 无障碍功能 ============
+
+  // Tab 切换功能增强
+  const tabButtons = $(".auth-tab-button");
+  const tabPanels = $(".auth-tab-content");
+
+  // Tab 切换函数
+  function switchTab(index) {
+    // 更新按钮状态
+    tabButtons.removeClass("active").attr("aria-selected", "false");
+    $(tabButtons[index]).addClass("active").attr("aria-selected", "true");
+
+    // 更新面板显示
+    tabPanels.removeClass("active");
+    $(tabPanels[index]).addClass("active");
+
+    // 移动焦点到激活的 Tab
+    tabButtons[index].focus();
+  }
+
+  // Tab 按钮点击事件
+  tabButtons.on("click", function () {
+    const index = tabButtons.index(this);
+    switchTab(index);
+  });
+
+  // Tab 键盘导航
+  tabButtons.on("keydown", function (e) {
+    const currentIndex = tabButtons.index(this);
+    let newIndex = currentIndex;
+
+    switch (e.key) {
+      case "ArrowLeft":
+        // 左箭头 - 前一个 Tab
+        newIndex = currentIndex > 0 ? currentIndex - 1 : tabButtons.length - 1;
+        e.preventDefault();
+        break;
+      case "ArrowRight":
+        // 右箭头 - 下一个 Tab
+        newIndex = currentIndex < tabButtons.length - 1 ? currentIndex + 1 : 0;
+        e.preventDefault();
+        break;
+      case "Home":
+        // Home 键 - 第一个 Tab
+        newIndex = 0;
+        e.preventDefault();
+        break;
+      case "End":
+        // End 键 - 最后一个 Tab
+        newIndex = tabButtons.length - 1;
+        e.preventDefault();
+        break;
+      default:
+        return;
+    }
+
+    if (newIndex !== currentIndex) {
+      switchTab(newIndex);
+    }
+  });
+
+  // 高级配置折叠按钮的 ARIA 更新
+  function updateAdvancedConfigAria() {
+    const isExpanded = !toggleBtn.hasClass("collapsed");
+    toggleBtn.attr("aria-expanded", isExpanded ? "true" : "false");
+  }
+
+  // 初始化 ARIA 状态
+  updateAdvancedConfigAria();
+
+  // 修改高级配置折叠点击事件，添加 ARIA 更新
+  toggleBtn.off("click").on("click", function () {
+    const willCollapse = !toggleBtn.hasClass("collapsed");
+
+    if (willCollapse) {
+      toggleBtn.addClass("collapsed");
+      content.addClass("collapsed");
+      localStorage.setItem("advancedCollapsed", "true");
+    } else {
+      toggleBtn.removeClass("collapsed");
+      content.removeClass("collapsed");
+      localStorage.setItem("advancedCollapsed", "false");
+    }
+
+    // 更新 ARIA 属性
+    updateAdvancedConfigAria();
+  });
+
+  // 高级配置折叠按钮的键盘支持
+  toggleBtn.on("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") {
+      $(this).click();
+      e.preventDefault();
+    }
+  });
+
+  // 工具折叠按钮的 ARIA 更新
+  function updateToolsAria() {
+    const isExpanded = !toolsToggle.hasClass("collapsed");
+    toolsToggle.attr("aria-expanded", isExpanded ? "true" : "false");
+  }
+
+  // 初始化工具折叠的 ARIA 状态
+  if (typeof toolsToggle !== "undefined" && toolsToggle.length > 0) {
+    updateToolsAria();
+
+    // 修改工具折叠点击事件，添加 ARIA 更新
+    toolsToggle.off("click").on("click", function () {
+      const willCollapse = !toolsToggle.hasClass("collapsed");
+
+      if (willCollapse) {
+        toolsToggle.addClass("collapsed");
+        toolsContent.addClass("collapsed");
+        localStorage.setItem("toolsCollapsed", "true");
+      } else {
+        toolsToggle.removeClass("collapsed");
+        toolsContent.removeClass("collapsed");
+        localStorage.setItem("toolsCollapsed", "false");
+      }
+
+      // 更新 ARIA 属性
+      updateToolsAria();
+    });
+
+    // 工具折叠按钮的键盘支持
+    toolsToggle.on("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") {
+        $(this).click();
+        e.preventDefault();
+      }
+    });
+  }
+
+  // 为所有自定义按钮添加键盘支持
+  $('[role="button"]').on("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") {
+      $(this).click();
+      e.preventDefault();
+    }
+  });
+});
