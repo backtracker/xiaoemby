@@ -1,6 +1,6 @@
 [project]
 name = "xiaoemby"
-version = "0.0.1"
+version = "0.0.2"
 description = "小爱音箱播放Emby音乐库"
 authors = [
 {name = "backtracker", email = "daihuarong@gmail.com"},
@@ -41,7 +41,6 @@ build-backend = "pdm.backend"
 lint = [
     "ruff>=0.4.8",
 ]
-dev = []
 [tool.ruff]
 lint.select = [
     "B", # flake8-bugbear
@@ -71,8 +70,12 @@ extend-immutable-calls = [
 ]
 
 [tool.pdm.scripts]
-lint = "ruff check . --exclude MiService"
-fmt = "ruff format . --exclude MiService"
-lintfmt = {composite = ["ruff check --fix . --exclude MiService", "ruff format . --exclude MiService"]}
+start = "python app.py"
+test = "pytest"
 
 
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]

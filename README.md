@@ -22,7 +22,7 @@ pdm install
 ### 启动服务
 
 ```shell
-pdm run python app.py
+pdm start
 ```
 
 默认监听端口 8090，使用其他端口请自行修改。

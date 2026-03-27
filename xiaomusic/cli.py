@@ -13,12 +13,13 @@ ___   ___  __       ___        ______    _______ .___  ___. .______   ____    __
  \  V  /  |  |    /  ^  \    |  |  |  | |  |__   |  \  /  | |  |_)  |  \   \/   /  
   >   <   |  |   /  /_\  \   |  |  |  | |   __|  |  |\/|  | |   _  <    \_    _/   
  /  .  \  |  |  /  _____  \  |  `--'  | |  |____ |  |  |  | |  |_)  |     |  |     
-/__/ \__\ |__| /__/     \__\  \______/  |_______||__|  |__| |______/      |__|  
+/__/ \__\ |__| /__/     \__\  \______/  |_______||__|  |__| |______/      |__|     
 
+{}
 """
 
 def main():
-    from xiaomusic import __version__
+    from xiaomusic.version import __version__
     from xiaomusic.api import HttpInit
     from xiaomusic.api import app as HttpApp
     from xiaomusic.config import Config

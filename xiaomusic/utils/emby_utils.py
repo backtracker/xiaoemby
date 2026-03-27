@@ -62,18 +62,8 @@ class EmbyUtil:
         stream_url = f"/emby/Audio/{audio.id}/stream?Container={container_encoded}&api_key={api_key_encoded}"
         audio.stream_url = f"{self.host}{stream_url}"
 
-    def search_music(self, name=None, artist=None, genre=None, is_favorite: bool = None, album=None, limit=15) -> List[
+    def search_music(self, name=None, artist=None, genre=None, is_favorite: bool = None, album=None, years=None, min_premiere_date=None, max_premiere_date=None, limit=15) -> List[
         Audio]:
-        """
-        用法：
-        1. 播放歌曲xxx
-        2. 播放xxx的歌
-        3. 播放专辑xxx
-        4. 播放xx风格的歌
-        5. 随机播放歌曲
-        6. 播放我喜欢的歌曲
-        7. 播放我喜欢的xxx的歌
-        """
         audio_list = []  # 音乐列表
         is_favorite = bool(is_favorite)
         all_locals = locals()
@@ -95,6 +85,9 @@ class EmbyUtil:
         payload.update({"Artists": artist}) if artist is not None else None
         payload.update({"Albums": album}) if album is not None else None
         payload.update({"Genres": genre}) if genre is not None else None
+        payload.update({"Years": years}) if years is not None else None
+        payload.update({"MinPremiereDate": min_premiere_date}) if min_premiere_date is not None else None
+        payload.update({"MaxPremiereDate": max_premiere_date}) if max_premiere_date is not None else None
         payload.update({"IncludeItemTypes": "Audio"}) if name is None else None
         if is_favorite:
             payload.update({"IsFavorite": is_favorite})
@@ -159,5 +152,6 @@ if __name__ == '__main__':
 
     eu = EmbyUtil(host=BASE_URL, user_id=USER_ID, api_key=API_KEY, log=test_log)
     #audio_list = eu.search_music(album="天黑")
-    r = eu.search_music(name="东北民谣", artist="毛不易")
+    #r = eu.search_music(name="东北民谣", artist="毛不易")
+    r = eu.search_music( artist="游鸿明", years="2001")
     print(r[0].stream_url)
