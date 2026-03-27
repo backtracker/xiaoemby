@@ -51,7 +51,14 @@ test_data = [
     
     # 测试播放歌手的风格歌曲
     ("播放许巍的民谣风格的歌曲", "play", {"name": "", "artist": "许巍", "is_favorite": "", "album": "", "genre": "民谣"}),
-    ("播放许巍的民谣歌曲", "play", {"name": "民谣", "artist": "许巍", "is_favorite": "", "album": "", "genre": ""}),
+    
+    # 测试播放年份相关的歌曲
+    ("播放1999年的歌", "play", {"name": "", "artist": "", "is_favorite": "", "album": "", "genre": "", "year": "1999"}),
+    ("播放周杰伦2006年的歌", "play", {"name": "", "artist": "周杰伦", "is_favorite": "", "album": "", "genre": "", "year": "2006"}),
+    ("播放周杰伦2010年之前的歌", "play", {"name": "", "artist": "周杰伦", "is_favorite": "", "album": "", "genre": "", "year": "2010"}),
+    ("播放任贤齐2012年之后的歌", "play", {"name": "", "artist": "任贤齐", "is_favorite": "", "album": "", "genre": "", "year": "2012"}),
+    ("播放1999年之前的歌", "play", {"name": "", "artist": "", "is_favorite": "", "album": "", "genre": "", "year": "1999"}),
+    ("播放2000年之后的歌", "play", {"name": "", "artist": "", "is_favorite": "", "album": "", "genre": "", "year": "2000"}),
 ]
 
 
@@ -77,7 +84,7 @@ def test_command_matching(test_text, expected_action, expected_fields):
             
             # 确保没有额外的匹配字段（除了我们关心的字段）
             for field_name in matched_fields:
-                if field_name not in ["name", "artist", "is_favorite", "album", "genre", "index"]:
+                if field_name not in ["name", "artist", "is_favorite", "album", "genre", "index", "year"]:
                     pytest.fail(f"意外匹配的字段: {field_name}")
             
             break

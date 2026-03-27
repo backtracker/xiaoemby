@@ -349,9 +349,24 @@ class XiaoMusic:
         album = kwargs.get("album", "")
         genre = kwargs.get("genre", "")
         is_favorite = kwargs.get("is_favorite", None)
+        year = kwargs.get("year", None)
+        # 初始化年份相关参数
+        years = None
+        min_premiere_date = None
+        max_premiere_date = None
+        # 判断是否是年份之前或之后的命令
+        if year and "之前" in arg1:
+            # 年份之前的命令，设置 max_premiere_date 为年份的1月1日
+            max_premiere_date = f"{year}-01-01"
+        elif year and "之后" in arg1:
+            # 年份之后的命令，设置 min_premiere_date 为年份的1月1日
+            min_premiere_date = f"{year}-01-01"
+        elif year:
+            # 确切年份的命令
+            years = year
         
         # 如果没有匹配到参数，使用传统方式解析
-        if not any([name, artist, album, genre, is_favorite]):
+        if not any([name, artist, album, genre, is_favorite, year]):
             parts = arg1.split("|")
             search_key = parts[0]
             name = parts[1] if len(parts) > 1 else search_key
@@ -367,7 +382,7 @@ class XiaoMusic:
             try:
                 # 当name为空时，传递None给search_music方法
                 emby_name = name if name else None
-                self.log.info(f"使用 Emby 搜索音乐: name={emby_name}, artist={artist}, album={album}, genre={genre}, is_favorite={is_favorite}")
+                self.log.info(f"使用 Emby 搜索音乐: name={emby_name}, artist={artist}, album={album}, genre={genre}, is_favorite={is_favorite}, years={years}, min_premiere_date={min_premiere_date}, max_premiere_date={max_premiere_date}")
                 # 使用 asyncio.to_thread 运行同步方法
                 audio_list = await asyncio.to_thread(
                     self.emby_util.search_music,
@@ -375,7 +390,10 @@ class XiaoMusic:
                     artist=artist,
                     album=album,
                     genre=genre,
-                    is_favorite=is_favorite
+                    is_favorite=is_favorite,
+                    years=years,
+                    min_premiere_date=min_premiere_date,
+                    max_premiere_date=max_premiere_date
                 )
                 
                 if audio_list:
