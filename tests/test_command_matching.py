@@ -59,6 +59,11 @@ test_data = [
     ("播放任贤齐2012年之后的歌", "play", {"name": "", "artist": "任贤齐", "is_favorite": "", "album": "", "genre": "", "year": "2012"}),
     ("播放1999年之前的歌", "play", {"name": "", "artist": "", "is_favorite": "", "album": "", "genre": "", "year": "1999"}),
     ("播放2000年之后的歌", "play", {"name": "", "artist": "", "is_favorite": "", "album": "", "genre": "", "year": "2000"}),
+    
+    # 测试播放歌手的所有歌曲
+    ("播放周杰伦的歌", "play", {"name": "", "artist": "周杰伦", "is_favorite": "", "album": "", "genre": ""}),
+    ("播放周杰伦的歌曲", "play", {"name": "", "artist": "周杰伦", "is_favorite": "", "album": "", "genre": ""}),
+    ("播放周杰伦的音乐", "play", {"name": "", "artist": "周杰伦", "is_favorite": "", "album": "", "genre": ""}),
 ]
 
 
