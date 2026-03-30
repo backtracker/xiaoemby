@@ -350,6 +350,17 @@ class XiaoMusic:
         genre = kwargs.get("genre", "")
         is_favorite = kwargs.get("is_favorite", None)
         year = kwargs.get("year", None)
+        
+        # 转换中文数字的年份为阿拉伯数字
+        if year:
+            # 检查是否是中文数字（包含中文数字字符）
+            if any(char in "零一二三四五六七八九十百千万亿" for char in year):
+                try:
+                    from xiaomusic.utils.text_utils import chinese_to_year
+                    year = str(chinese_to_year(year))
+                except Exception as e:
+                    self.log.error(f"转换中文年份失败: {e}")
+                    year = None
         # 初始化年份相关参数
         years = None
         min_premiere_date = None

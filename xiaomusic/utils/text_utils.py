@@ -171,6 +171,28 @@ def custom_sort_key(s: str) -> tuple:
         return (2, s)
 
 
+def chinese_to_year(chinese: str) -> int:
+    """
+    中文年份转阿拉伯数字年份
+
+    Args:
+        chinese: 中文年份字符串，如 "二零一零"
+
+    Returns:
+        对应的阿拉伯数字年份
+    """
+    # 逐字转换中文数字为阿拉伯数字
+    arabic_digits = []
+    for char in chinese:
+        if char in chinese_to_arabic:
+            arabic_digits.append(str(chinese_to_arabic[char]))
+        else:
+            raise ValueError(f"无法解析的中文数字字符: {char}")
+    
+    # 组合成阿拉伯数字字符串并转换为整数
+    return int(''.join(arabic_digits))
+
+
 def chinese_to_number(chinese: str) -> int:
     """
     中文数字转阿拉伯数字
