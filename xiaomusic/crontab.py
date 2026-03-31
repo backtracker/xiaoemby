@@ -2,8 +2,12 @@ import json
 import os
 import shutil
 
+from dataclasses import asdict
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfoNotFoundError
+import datetime
 
 
 async def clean_temp_dir(config):
@@ -33,16 +37,25 @@ async def clean_temp_dir(config):
 class CustomCronTrigger:
     """简化的触发器，不再支持workday/offday特殊值"""
 
-    def __init__(self, cron_expression):
+    def __init__(self, cron_expression, timezone=None):
         self.cron_expression = cron_expression
 
         # 分离表达式和注释
         expr_parts = cron_expression.split("#", 1)
         self.base_expression = expr_parts[0].strip()
 
+        # 使用zoneinfo明确创建时区对象，默认使用上海时区
+        if timezone:
+            try:
+                tz = ZoneInfo(timezone)
+            except ZoneInfoNotFoundError:
+                tz = ZoneInfo("Asia/Shanghai")
+        else:
+            tz = ZoneInfo("Asia/Shanghai")
+
         # 构建基础Cron触发器
         try:
-            self.base_trigger = CronTrigger.from_crontab(self.base_expression)
+            self.base_trigger = CronTrigger.from_crontab(self.base_expression, timezone=tz)
         except Exception as e:
             raise ValueError(f"无效的Cron表达式: {self.base_expression}") from e
 
@@ -52,17 +65,37 @@ class CustomCronTrigger:
 
 
 class Crontab:
-    def __init__(self, log):
+    def __init__(self, log, timezone=None):
         self.log = log
-        self.scheduler = AsyncIOScheduler()
+        # 使用zoneinfo明确创建时区对象，默认使用上海时区
+        if timezone:
+            try:
+                tz = ZoneInfo(timezone)
+                self.log.info(f"使用配置的时区: {timezone}")
+            except ZoneInfoNotFoundError as e:
+                self.log.error(f"无效的时区配置: {timezone}, 错误: {e}")
+                self.log.info("将使用默认时区: Asia/Shanghai")
+                tz = ZoneInfo("Asia/Shanghai")
+        else:
+            tz = ZoneInfo("Asia/Shanghai")
+            self.log.info("未配置时区，使用默认时区: Asia/Shanghai")
+        
+        self.scheduler = AsyncIOScheduler(timezone=tz)
 
     def start(self):
+        self.log.info("启动定时任务调度器...")
         self.scheduler.start()
+        self.log.info("定时任务调度器已启动")
 
     def add_job(self, expression, job, coalesce=True):
         try:
             # 构建Cron触发器
-            trigger = CronTrigger.from_crontab(expression.split("#", 1)[0].strip())
+            expr_parts = expression.split("#", 1)
+            base_expression = expr_parts[0].strip()
+            self.log.info(f"添加定时任务，表达式: {base_expression}")
+            
+            # 显式指定时区创建CronTrigger，确保与调度器使用相同的时区
+            trigger = CronTrigger.from_crontab(base_expression, timezone=self.scheduler.timezone)
 
             # 添加任务配置：
             # coalesce: 如果任务错过了多次执行，是否只执行一次（默认True，适合播放类任务）
@@ -71,10 +104,11 @@ class Crontab:
             self.scheduler.add_job(
                 job, trigger, coalesce=coalesce, max_instances=30, misfire_grace_time=60
             )
+            self.log.info(f"定时任务添加成功，表达式: {base_expression}")
         except ValueError as e:
-            self.log.error(f"Invalid crontab expression {e}")
+            self.log.error(f"无效的Cron表达式: {expression}, 错误: {e}")
         except Exception as e:
-            self.log.exception(f"Exception {e}")
+            self.log.exception(f"添加定时任务失败: {expression}, 错误: {e}")
 
     # 添加关机任务
     def add_job_stop(self, expression, xiaomusic, did, **kwargs):
@@ -143,10 +177,41 @@ class Crontab:
     # 开启或关闭获取对话记录
     def add_job_set_pull_ask(self, expression, xiaomusic, did, arg1, **kwargs):
         async def job():
-            if arg1 == "enable":
-                xiaomusic.config.enable_pull_ask = True
-            else:
-                xiaomusic.config.enable_pull_ask = False
+            try:
+                self.log.info(f"定时任务开始执行: set_pull_ask {arg1}")
+                
+                # 解析参数格式：可以是 "enable"/"disable" 或者 "enable_pull_ask|enable" 格式
+                config_param = arg1.split("|")
+                if len(config_param) == 1:
+                    # 兼容旧格式，默认控制 enable_pull_ask
+                    config_key = "enable_pull_ask"
+                    state_value = config_param[0]
+                else:
+                    # 新格式：config_key|state_value
+                    config_key = config_param[0]
+                    state_value = config_param[1]
+                
+                if state_value == "enable":
+                    new_state = True
+                else:
+                    new_state = False
+                
+                # 更新对应的配置项
+                if hasattr(xiaomusic.config, config_key):
+                    self.log.info(f"更新配置: {config_key} = {new_state}")
+                    setattr(xiaomusic.config, config_key, new_state)
+                else:
+                    self.log.error(f"未知的配置项: {config_key}")
+                    return
+                
+                # 保存配置到文件
+                self.log.info("保存配置到文件...")
+                await xiaomusic.saveconfig(asdict(xiaomusic.config))
+                
+                self.log.info(f"定时任务执行成功: set_pull_ask {arg1}，{config_key}={new_state}")
+                
+            except Exception as e:
+                self.log.error(f"定时任务执行失败: set_pull_ask {arg1}，错误: {e}", exc_info=True)
 
         self.add_job(expression, job)
 
@@ -186,19 +251,24 @@ class Crontab:
 
     # 重新加载计划任务
     def reload_config(self, xiaomusic):
+        self.log.info("重新加载定时任务配置...")
         self.clear_jobs()
 
         crontab_json = xiaomusic.config.crontab_json
         if not crontab_json:
+            self.log.info("crontab_json为空，没有定时任务需要加载")
             return
 
         try:
             cron_list = json.loads(crontab_json)
+            self.log.info(f"解析到 {len(cron_list)} 个定时任务")
             for cron in cron_list:
                 self.add_job_cron(xiaomusic, cron)
             self.log.info("crontab reload_config ok")
+        except json.JSONDecodeError as e:
+            self.log.error(f"JSON解析失败: {e}, crontab_json: {crontab_json}")
         except Exception as e:
-            self.log.exception(f"Execption {e}")
+            self.log.exception(f"重新加载定时任务失败: {e}")
 
         # 添加定时清理临时文件任务
         if xiaomusic.config.enable_auto_clean_temp:

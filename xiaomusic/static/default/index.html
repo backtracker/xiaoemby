@@ -112,14 +112,113 @@
 
 
 
-    <!-- 定时关机组件 -->
+    <!-- 定时功能组件 -->
     <div class="component" id="timer-component" role="dialog" aria-modal="true" aria-labelledby="timer-title">
-        <h2 id="timer-title">定时关机</h2>
+        <h2 id="timer-title">定时功能</h2>
 
-        <button onclick="timedShutDown('10分钟后关机')">10分钟后关机</button>
-        <button onclick="timedShutDown('30分钟后关机')">30分钟后关机</button>
-        <button onclick="timedShutDown('60分钟后关机')">60分钟后关机</button>
-        <span class="tooltip timer-tooltip hidden-element">已发送指令</span>
+        <!-- 快速定时关机 -->
+        <div class="card-section">
+            <h3 class="card-title">⏱️ 快速定时关机</h3>
+            <button onclick="timedShutDown('10分钟后关机')">10分钟后关机</button>
+            <button onclick="timedShutDown('30分钟后关机')">30分钟后关机</button>
+            <button onclick="timedShutDown('60分钟后关机')">60分钟后关机</button>
+            <span class="tooltip timer-tooltip hidden-element">已发送指令</span>
+        </div>
+
+        <!-- 定时开关语音口令 -->
+        <div class="card-section">
+            <h3 class="card-title">⏰ 定时开关语音口令</h3>
+            
+            <!-- 定时规则列表 -->
+            <div class="timer-rules-container">
+                <div class="timer-rule-header">
+                    <div class="rule-col day-col">星期</div>
+                    <div class="rule-col time-col">时间</div>
+                    <div class="rule-col action-col">开关</div>
+                    <div class="rule-col action-button-col">操作</div>
+                </div>
+                
+                <!-- 规则行模板 -->
+                <div class="timer-rule" id="rule-template" style="display: none;">
+                    <input type="hidden" class="rule-id-field" />
+                    <div class="rule-col day-col">
+                        <div class="select-wrapper">
+                            <select class="day-select custom-multi-select" multiple onchange="formatDaySelection(this)">
+                                <option value="0">周一</option>
+                                <option value="1">周二</option>
+                                <option value="2">周三</option>
+                                <option value="3">周四</option>
+                                <option value="4">周五</option>
+                                <option value="5">周六</option>
+                                <option value="6">周日</option>
+                            </select>
+                            <div class="selected-days-text"></div>
+                        </div>
+                    </div>
+                    <div class="rule-col time-col">
+                        <select class="hour-select">
+                            <option value="0">00</option>
+                            <option value="1">01</option>
+                            <option value="2">02</option>
+                            <option value="3">03</option>
+                            <option value="4">04</option>
+                            <option value="5">05</option>
+                            <option value="6">06</option>
+                            <option value="7">07</option>
+                            <option value="8">08</option>
+                            <option value="9">09</option>
+                            <option value="10">10</option>
+                            <option value="11">11</option>
+                            <option value="12">12</option>
+                            <option value="13">13</option>
+                            <option value="14">14</option>
+                            <option value="15">15</option>
+                            <option value="16">16</option>
+                            <option value="17">17</option>
+                            <option value="18">18</option>
+                            <option value="19">19</option>
+                            <option value="20">20</option>
+                            <option value="21">21</option>
+                            <option value="22">22</option>
+                            <option value="23">23</option>
+                        </select>
+                        <span class="time-separator">:</span>
+                        <select class="minute-select">
+                            <option value="0">00</option>
+                            <option value="5">05</option>
+                            <option value="10">10</option>
+                            <option value="15">15</option>
+                            <option value="20">20</option>
+                            <option value="25">25</option>
+                            <option value="30">30</option>
+                            <option value="35">35</option>
+                            <option value="40">40</option>
+                            <option value="45">45</option>
+                            <option value="50">50</option>
+                            <option value="55">55</option>
+                        </select>
+                    </div>
+                    <div class="rule-col action-col">
+                            <select class="action-select">
+                                <option value="enable">开启</option>
+                                <option value="disable">关闭</option>
+                            </select>
+                        </div>
+                    <div class="rule-col action-button-col">
+                        <button class="save-rule-btn" onclick="saveTimerRule(this)">保存</button>
+                        <button class="delete-rule-btn" onclick="deleteTimerRule(this)">删除</button>
+                    </div>
+                </div>
+                
+                <!-- 规则列表容器 -->
+                <div id="timer-rules-list"></div>
+            </div>
+            
+            <!-- 添加规则按钮 -->
+            <button onclick="addTimerRule()" class="add-rule-btn">添加定时规则</button>
+        </div>
+
+        <!-- 关闭按钮 -->
         <div class="component-button-one">
             <button onclick="toggleTimer()" class="close-button">关闭</button>
         </div>

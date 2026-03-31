@@ -49,6 +49,7 @@ command_action_dict = {
     r"全部循环": "set_play_type_all",
     r"随机播放": "set_play_type_rnd",
     r"刷新(?:播放)?列表": "gen_music_list",
+    r"关闭语音口令|关闭语音指令|关闭口令功能": "set_pull_ask_off",
 }
 
 
@@ -86,7 +87,7 @@ class Config:
 
     active_cmd: str = os.getenv(
         "XIAOMUSIC_ACTIVE_CMD",
-        "play,set_play_type_rnd,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,set_play_type_one,set_play_type_all,set_play_type_sin,set_play_type_seq,gen_music_list,add_to_favorites,del_from_favorites,online_play,singer_play",
+        "play,set_play_type_rnd,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,set_play_type_one,set_play_type_all,set_play_type_sin,set_play_type_seq,gen_music_list,set_pull_ask_off,add_to_favorites,del_from_favorites,online_play,singer_play",
     )
     custom_play_list_json: str = os.getenv("XIAOMUSIC_CUSTOM_PLAY_LIST_JSON", "")
 
@@ -163,6 +164,8 @@ class Config:
         os.getenv("XIAOMUSIC_ENABLE_AUTO_CLEAN_TEMP", "true").lower() == "true"
     )
     qrcode_timeout: int = os.getenv("QRCODE_TIMEOUT", 120)
+    # 时区配置，用于定时任务等时间相关功能
+    timezone: str = os.getenv("XIAOMUSIC_TIMEZONE", "Asia/Shanghai")
 
     def append_keyword(self, keys, action):
         for key in keys.split(","):

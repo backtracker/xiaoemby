@@ -595,7 +595,252 @@ function toggleTimer() {
     closeDialog("timer-component");
   } else {
     openDialog("timer-component");
+    // 加载已有的定时规则
+    loadTimerRules();
   }
+}
+
+// 定时开关语音口令功能
+function formatDaySelection(selectElement) {
+    const $select = $(selectElement);
+    const selectedValues = $select.val() || [];
+    const dayNames = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+    const selectedNames = selectedValues.map(val => dayNames[parseInt(val)]);
+    
+    // 如果没有选择任何星期
+    if (selectedNames.length === 0) {
+        $select.siblings(".selected-days-text").text("请选择星期");
+        return;
+    }
+    
+    // 按星期顺序排序
+    const sortedValues = selectedValues.map(val => parseInt(val)).sort((a, b) => {
+        // 简单按数值排序即可，因为现在0=周一，6=周日
+        return a - b;
+    });
+    
+    // 转换为显示的星期名称
+    const sortedNames = sortedValues.map(val => dayNames[val]);
+    
+    // 尝试识别连续的星期范围
+    let formatted = "";
+    let i = 0;
+    
+    while (i < sortedValues.length) {
+        let start = i;
+        let end = i;
+        
+        // 寻找连续的范围
+        while (end < sortedValues.length - 1) {
+            // 处理周日的特殊情况
+            if (sortedValues[end] === 6 && sortedValues[end + 1] === 0) {
+                end++;
+            } else if (sortedValues[end + 1] === sortedValues[end] + 1) {
+                end++;
+            } else {
+                break;
+            }
+        }
+        
+        // 添加范围或单个星期
+        if (start === end) {
+            formatted += sortedNames[start];
+        } else {
+            formatted += sortedNames[start] + "至" + sortedNames[end];
+        }
+        
+        // 添加逗号分隔符
+        if (end < sortedValues.length - 1) {
+            formatted += "，";
+        }
+        
+        i = end + 1;
+    }
+    
+    $select.siblings(".selected-days-text").text(formatted);
+}
+
+// 为所有自定义多选下拉框添加事件监听器
+$(document).ready(function() {
+    // 为新添加的规则也添加事件监听器
+    $(document).on("click", ".custom-multi-select", function() {
+        // 确保下拉框打开时，已选项目的勾选标记正确显示
+        const $this = $(this);
+        // 触发一次change事件，确保显示正确
+        $this.trigger("change");
+    });
+    
+    // 为select元素添加focus事件，确保已选项目显示正确
+    $(document).on("focus", ".custom-multi-select", function() {
+        const $this = $(this);
+        $this.trigger("change");
+    });
+    
+    // 为select元素添加blur事件，更新显示
+    $(document).on("blur", ".custom-multi-select", function() {
+        const $this = $(this);
+        $this.trigger("change");
+    });
+});
+
+function addTimerRule() {
+  const template = $("#rule-template").clone();
+  template.removeAttr("id");
+  template.removeAttr("style");
+  $("#timer-rules-list").append(template);
+  // 初始化显示文本
+  formatDaySelection(template.find(".day-select"));
+}
+
+function saveTimerRule(btn) {
+  const ruleDiv = $(btn).closest(".timer-rule");
+  // 优先从data属性获取ID，如果没有则从隐藏字段获取
+  const ruleId = ruleDiv.data("rule-id") || ruleDiv.find(".rule-id-field").val();
+  const days = ruleDiv.find(".day-select :selected").map(function() {
+    return $(this).val();
+  }).get().join(",");
+  
+  const hour = ruleDiv.find(".hour-select").val();
+  const minute = ruleDiv.find(".minute-select").val();
+  const action = ruleDiv.find(".action-select").val();
+  
+  // 验证选择了星期
+  if (days.length === 0) {
+    alert("请选择至少一个星期");
+    return;
+  }
+  
+  // 构建cron表达式
+  // format: minute hour day_of_month month day_of_week
+  const cronExpression = `${minute} ${hour} * * ${days}`;
+  
+  // 构建规则数据
+  const rule = {
+    expression: cronExpression,
+    name: "set_pull_ask",
+    arg1: action === "enable" ? "enable" : "disable"
+  };
+  
+  // 如果是现有规则，添加ID
+  if (ruleId) {
+    rule.id = ruleId;
+  }
+  
+  // 调试：打印要保存的规则
+  console.log("要保存的规则:", rule);
+  
+  // 保存到服务器
+  $.ajax({
+    type: "POST",
+    url: "/xiaoemby/system/addtimerrule",
+    contentType: "application/json; charset=utf-8",
+    data: JSON.stringify(rule),
+    success: (response) => {
+      // 调试：打印服务器响应
+      console.log("保存成功响应:", response);
+      alert("定时规则保存成功");
+      // 重新加载规则列表
+      loadTimerRules();
+    },
+    error: (xhr, status, error) => {
+      // 调试：打印完整的错误信息
+      console.error("保存定时规则失败:", status, error);
+      console.error("XHR:", xhr);
+      alert("保存定时规则失败: " + error);
+    }
+  });
+}
+
+function deleteTimerRule(btn) {
+  const ruleDiv = $(btn).closest(".timer-rule");
+  // 优先从data属性获取ID，如果没有则从隐藏字段获取
+  const ruleId = ruleDiv.data("rule-id") || ruleDiv.find(".rule-id-field").val();
+  
+  if (ruleId) {
+    // 调试：打印要删除的规则ID
+    console.log("要删除的规则ID:", ruleId);
+    
+    // 删除服务器上的规则
+    $.ajax({
+      type: "POST",
+      url: "/xiaoemby/system/deletetimerrule",
+      contentType: "application/json; charset=utf-8",
+      data: JSON.stringify({ id: ruleId }), // 确保使用正确的字段名
+      success: (response) => {
+        // 调试：打印删除成功响应
+        console.log("删除成功响应:", response);
+        ruleDiv.remove();
+        alert("定时规则删除成功");
+      },
+      error: (xhr, status, error) => {
+        // 调试：打印完整的错误信息
+        console.error("删除定时规则失败:", status, error);
+        console.error("XHR:", xhr);
+        alert("删除定时规则失败: " + error);
+      }
+    });
+  } else {
+    // 直接删除未保存的规则
+    ruleDiv.remove();
+  }
+}
+
+function loadTimerRules() {
+  $.get("/xiaoemby/system/gettimerrules", function(data, status) {
+    if (status === "success" && data.rules) {
+      const rulesList = $("#timer-rules-list");
+      rulesList.empty();
+      
+      // 调试：打印获取到的规则
+      console.log("加载到的定时规则:", data.rules);
+      
+      data.rules.forEach(rule => {
+        // 调试：打印每条规则的详细信息
+        console.log("处理规则:", rule);
+        
+        if (rule.name === "set_pull_ask") {
+          const template = $("#rule-template").clone();
+          template.removeAttr("id");
+          template.removeAttr("style");
+          // 同时设置data属性和隐藏字段
+          template.data("rule-id", rule.id);
+          template.find(".rule-id-field").val(rule.id);
+          
+          // 解析cron表达式
+          const cronParts = rule.expression.split(" ");
+          if (cronParts.length >= 5) {
+            const minute = cronParts[0];
+            const hour = cronParts[1];
+            const days = cronParts[4];
+            
+            // 设置星期选择
+            const daySelect = template.find(".day-select");
+            daySelect.val(days.split(","));
+            // 更新显示文本
+            formatDaySelection(daySelect[0]);
+            
+            // 设置时间选择
+            template.find(".hour-select").val(hour);
+            template.find(".minute-select").val(minute);
+            
+            // 设置操作选择
+            const actionSelect = template.find(".action-select");
+            actionSelect.val(rule.arg1 === "enable" ? "enable" : "disable");
+            
+            rulesList.append(template);
+          } else {
+            console.log("无效的cron表达式:", rule.expression);
+          }
+        } else {
+          console.log("跳过非set_pull_ask类型的规则:", rule.name);
+        }
+      });
+    } else {
+      console.log("获取定时规则失败:", status, data);
+    }
+  }).fail(function(xhr, status, error) {
+    console.log("AJAX请求失败:", status, error);
+  });
 }
 
 function togglePlayLink() {

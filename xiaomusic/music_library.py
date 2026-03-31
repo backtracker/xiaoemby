@@ -60,12 +60,6 @@ class MusicLibrary:
 
         从网络歌单（如Emby）生成音乐列表。
         """
-        # 保存现有的Audio对象
-        existing_audio_objects = {}
-        for name, music in self.all_music.items():
-            if hasattr(music, 'name'):
-                existing_audio_objects[name] = music
-
         # 初始化all_music字典
         self.all_music = {}
 
@@ -90,11 +84,6 @@ class MusicLibrary:
                 self.log.info(f"从Emby获取到 {len(emby_music)} 首歌曲")
             except Exception as e:
                 self.log.exception(f"从Emby获取音乐失败: {e}")
-
-        # 恢复之前保存的Audio对象
-        for name, audio in existing_audio_objects.items():
-            self.all_music[name] = audio
-            self.log.info(f"恢复Audio对象: {name}, duration={audio.duration}")
 
         # 全部，所有歌曲
         self.music_list["全部"] = list(self.all_music.keys())

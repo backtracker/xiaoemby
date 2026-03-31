@@ -135,12 +135,143 @@ async def modifiysetting(request: Request):
 
         # 保存配置到文件
         xiaomusic.save_cur_config()
+        
+        # 重新加载定时任务
+        if "crontab_json" in data:
+            log.info("crontab_json已修改，重新加载定时任务")
+            xiaomusic.crontab.reload_config(xiaomusic)
 
         return {"success": True, "message": "Configuration updated successfully"}
     except json.JSONDecodeError as err:
         raise HTTPException(status_code=400, detail="Invalid JSON") from err
     except Exception as err:
         log.error(f"Error updating configuration: {err}")
+        raise HTTPException(status_code=500, detail=str(err)) from err
+
+
+@router.get("/xiaoemby/system/gettimerrules")
+async def gettimerrules():
+    """获取所有定时规则"""
+    try:
+        # 获取当前配置中的定时规则
+        config_data = xiaomusic.getconfig()
+        crontab_json = config_data.crontab_json
+        
+        if not crontab_json:
+            return {"rules": []}
+        
+        rules = json.loads(crontab_json)
+        return {"rules": rules}
+    except Exception as err:
+        log.error(f"Error getting timer rules: {err}")
+        return {"rules": []}
+
+
+@router.post("/xiaoemby/system/addtimerrule")
+async def addtimerrule(request: Request):
+    """添加或更新定时规则"""
+    try:
+        data_json = await request.body()
+        rule_data = json.loads(data_json.decode("utf-8"))
+        
+        # 获取当前配置中的定时规则
+        config_data = xiaomusic.getconfig()
+        crontab_json = config_data.crontab_json
+        
+        rules = []
+        if crontab_json:
+            rules = json.loads(crontab_json)
+        
+        # 确保name字段正确设置
+        if "name" not in rule_data:
+            rule_data["name"] = "set_pull_ask"
+        
+        # 检查是否提供了ID
+        if "id" in rule_data:
+            # 更新现有规则
+            rule_id = rule_data["id"]
+            updated = False
+            for i, rule in enumerate(rules):
+                if rule.get("id") == rule_id:
+                    rules[i] = rule_data
+                    updated = True
+                    break
+            
+            if not updated:
+                # 如果没有找到对应ID的规则，作为新规则处理
+                rules.append(rule_data)
+            
+            # 调试：打印更新后的规则列表
+            log.info(f"更新后的定时规则: {rules}")
+        else:
+            # 为新规则生成ID
+            import uuid
+            rule_data["id"] = str(uuid.uuid4())
+            
+            # 添加新规则
+            rules.append(rule_data)
+            
+            # 调试：打印添加后的规则列表
+            log.info(f"添加后的定时规则: {rules}")
+        
+        # 更新配置
+        update_data = asdict(config_data)
+        update_data["crontab_json"] = json.dumps(rules)
+        
+        # 保存配置
+        await xiaomusic.saveconfig(update_data)
+        
+        return {"success": True, "message": "Timer rule added successfully", "rules": rules}
+    except json.JSONDecodeError as err:
+        log.error(f"Invalid JSON: {err}")
+        raise HTTPException(status_code=400, detail="Invalid JSON") from err
+    except Exception as err:
+        log.error(f"Error adding timer rule: {err}")
+        raise HTTPException(status_code=500, detail=str(err)) from err
+
+
+@router.post("/xiaoemby/system/deletetimerrule")
+async def deletetimerrule(request: Request):
+    """删除定时规则"""
+    try:
+        data_json = await request.body()
+        delete_data = json.loads(data_json.decode("utf-8"))
+        rule_id = delete_data.get("id")
+        
+        if not rule_id:
+            raise HTTPException(status_code=400, detail="Missing rule ID")
+        
+        # 获取当前配置中的定时规则
+        config_data = xiaomusic.getconfig()
+        crontab_json = config_data.crontab_json
+        
+        rules = []
+        if crontab_json:
+            rules = json.loads(crontab_json)
+        
+        # 调试：打印当前规则和要删除的ID
+        log.info(f"当前规则: {rules}")
+        log.info(f"要删除的规则ID: {rule_id}")
+        
+        # 过滤掉要删除的规则
+        new_rules = [rule for rule in rules if rule.get("id") != rule_id]
+        
+        # 调试：打印删除后的规则
+        log.info(f"删除后的规则: {new_rules}")
+        
+        # 更新配置
+        update_data = asdict(config_data)
+        update_data["crontab_json"] = json.dumps(new_rules)
+        
+        # 保存配置
+        await xiaomusic.saveconfig(update_data)
+        
+        return {"success": True, "message": "Timer rule deleted successfully", "rules": new_rules}
+    except json.JSONDecodeError as err:
+        log.error(f"Invalid JSON: {err}")
+        raise HTTPException(status_code=400, detail="Invalid JSON") from err
+    except Exception as err:
+        log.error(f"Error deleting timer rule: {err}")
         raise HTTPException(status_code=500, detail=str(err)) from err
 
 

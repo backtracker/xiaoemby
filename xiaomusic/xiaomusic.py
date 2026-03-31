@@ -3,6 +3,7 @@ import asyncio
 import logging
 import os
 import re
+from dataclasses import asdict
 from logging.handlers import RotatingFileHandler
 from xiaomusic.version import __version__
 from xiaomusic.auth import AuthManager
@@ -55,11 +56,6 @@ class XiaoMusic:
         # 初始化日志
         self.setup_logger()
 
-        # 计划任务
-        self.crontab = Crontab(self.log)
-
-
-
         # 初始化配置管理器（在日志准备好之后）
         self.config_manager = ConfigManager(
             config=self.config,
@@ -70,6 +66,14 @@ class XiaoMusic:
         config_data = self.config_manager.try_init_setting()
         if config_data:
             self.update_config_from_setting(config_data)
+
+        # 计划任务 - 在加载配置后初始化，确保时区配置被正确应用
+        self.log.info(f"准备初始化Crontab，当前配置的时区为: {self.config.timezone}")
+        self.crontab = Crontab(self.log, self.config.timezone)
+        self.log.info("Crontab初始化完成")
+        # 初始化后重新加载配置，确保定时任务使用正确的时区
+        self.crontab.reload_config(self)
+        self.log.info("定时任务配置重新加载完成")
 
         # 初始化 EmbyUtil
         try:
@@ -271,6 +275,28 @@ class XiaoMusic:
         self.music_library.gen_all_music_list()
         self.update_all_playlist()
         self.log.info("gen_music_list ok")
+    
+    # 口令:关闭语音口令
+    async def set_pull_ask_off(self, did="", **kwargs):
+        """关闭语音口令开关
+
+        Args:
+            did: 设备ID
+        """
+        try:
+            # 更新配置
+            data = asdict(self.getconfig())
+            data["enable_pull_ask"] = False
+            await self.saveconfig(data)
+            
+            # 发送反馈消息
+            self.log.info("语音口令已关闭")
+            if did in self.device_manager.devices:
+                await self.device_manager.devices[did].do_tts("语音口令已关闭")
+        except Exception as e:
+            self.log.exception(f"关闭语音口令失败: {e}")
+            if did in self.device_manager.devices:
+                await self.device_manager.devices[did].do_tts("关闭语音口令失败")
 
 
     # ===========================================================
@@ -561,8 +587,9 @@ class XiaoMusic:
 
 
 
-        # 重新加载计划任务
-        self.crontab.reload_config(self)
+        # 重新加载计划任务（仅在crontab已初始化时执行）
+        if hasattr(self, 'crontab') and self.crontab:
+            self.crontab.reload_config(self)
 
     # 重新初始化
     async def reinit(self):

@@ -95,7 +95,7 @@ class EmbyUtil:
         print(payload)
         try:
             r = requests.get(url=url, params=payload)
-            self.log.info("Emby 接口返回：{}".format(r.text))
+            self.log.info("Emby 接口返回：{} ...".format(r.text[:1000]))
         except Exception as e:
             self.log.error("Emby 接口异常：{}".format(e))
             return []

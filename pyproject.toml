@@ -1,6 +1,6 @@
 [project]
 name = "xiaoemby"
-version = "0.0.3"
+version = "0.0.4"
 description = "小爱音箱播放Emby音乐库"
 authors = [
 {name = "backtracker", email = "daihuarong@gmail.com"},
@@ -20,7 +20,8 @@ dependencies = [
     "miservice-fork",
     "edge-tts>=7.2.3",
     "pycryptodome>=3.23.0",
-    "qrcode>=8.2"
+    "qrcode>=8.2",
+    "tzdata>=2023.3"
 ]
 requires-python = ">=3.10"
 readme = "README.md"

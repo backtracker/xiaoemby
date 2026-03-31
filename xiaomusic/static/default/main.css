@@ -9,6 +9,7 @@
   --success-color: #28a745;
   --warning-color: #ffc107;
   --error-color: #dc3545;
+  --error-hover: #c82333;
   --info-color: #17a2b8;
 
   /* 中性色 */
@@ -1073,9 +1074,232 @@ p {
 
 /* 测试结果弹窗样式 */
 .test-result-content {
-  margin-bottom: var(--spacing-md);
-  width: 100%;
-  overflow: hidden;
+    margin-bottom: var(--spacing-md);
+    width: 100%;
+    overflow: hidden;
+}
+
+/* 定时功能组件样式 */
+.timer-section {
+    margin-bottom: 20px;
+}
+
+.timer-section h3 {
+    margin-bottom: 10px;
+    color: var(--text-primary);
+    font-size: 18px;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 5px;
+}
+
+.timer-rules-container {
+    width: 100%;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.timer-rule-header {
+    display: flex;
+    background-color: var(--bg-secondary);
+    padding: 10px;
+    font-weight: bold;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.timer-rule {
+    display: flex;
+    padding: 10px;
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--bg-primary);
+}
+
+.timer-rule:last-child {
+    border-bottom: none;
+}
+
+.rule-col {
+    display: flex;
+    align-items: center;
+}
+
+.day-col {
+    width: 25%;
+}
+
+.time-col {
+    width: 30%;
+    display: flex;
+    align-items: center;
+}
+
+.action-col {
+    width: 15%; /* 减少操作列宽度 */
+    display: flex;
+    align-items: center;
+}
+
+.action-button-col {
+    width: 30%; /* 增加按钮列宽度 */
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.day-select, .hour-select, .minute-select, .action-select {
+    padding: 5px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+/* 确保选择器容器宽度固定 */
+.select-wrapper {
+    position: relative;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* 自定义多选下拉框样式 */
+.custom-multi-select {
+    position: relative;
+    /* 保留浏览器默认的多选下拉框样式 */
+    /* appearance: none; */
+    /* background-image: none; */
+    padding-right: 10px;
+    cursor: pointer;
+    height: auto;
+    min-height: 36px;
+    overflow-y: auto;
+    max-height: 150px;
+    /* 固定宽度，避免多选后大小变化 */
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* 为option元素添加勾选标记 */
+.custom-multi-select option {
+    position: relative;
+    padding-left: 25px;
+    line-height: 1.8;
+    cursor: pointer;
+    /* 确保option不会影响下拉框的宽度 */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+/* 已选中的option样式 */
+.custom-multi-select option:checked::before {
+    content: "✓";
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--primary-color);
+    font-weight: bold;
+    font-size: 14px;
+}
+
+/* 当select打开时的样式 */
+.custom-multi-select:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+/* 优化多选下拉框的滚动条 */
+.custom-multi-select::-webkit-scrollbar {
+    width: 6px;
+}
+
+.custom-multi-select::-webkit-scrollbar-track {
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+}
+
+.custom-multi-select::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+}
+
+.custom-multi-select::-webkit-scrollbar-thumb:hover {
+    background: var(--primary-color);
+}
+
+/* 优化已选文本的显示 */
+.selected-days-text {
+    width: 100%;
+    height: 36px;
+    padding: 5px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 26px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 5px;
+    pointer-events: none;
+    /* 确保不会影响select元素 */
+    position: relative;
+    z-index: 1;
+}
+
+/* 当有选中项时，添加不同的背景色 */
+.select-wrapper:has(.custom-multi-select:valid) .selected-days-text {
+    background-color: var(--primary-light);
+    border-color: var(--primary-color);
+}
+
+.hour-select, .minute-select {
+    width: 60px;
+}
+
+.action-select {
+    width: 100%;
+}
+
+.time-separator {
+    margin: 0 5px;
+    color: var(--text-primary);
+}
+
+.save-rule-btn, .delete-rule-btn {
+    padding: 5px 10px;
+    font-size: 14px;
+    margin: 0;
+    height: 36px;
+    line-height: 26px;
+    box-sizing: border-box;
+    width: calc(50% - 2.5px); /* 两个按钮均匀分配空间，减去gap的一半 */
+    min-width: 0;
+    white-space: nowrap; /* 防止文字换行 */
+    text-align: center; /* 确保文字居中 */
+    color: var(--text-inverse); /* 白色文本，与深色背景对比 */
+}
+
+.save-rule-btn {
+    background-color: var(--primary-color);
+}
+
+.delete-rule-btn {
+    background-color: var(--error-color);
+}
+
+.delete-rule-btn:hover {
+    background-color: var(--error-hover);
+}
+
+.add-rule-btn {
+    margin-top: 10px;
+    background-color: var(--success-color);
+}
+
+.add-rule-btn:hover {
+    background-color: var(--success-hover);
 }
 
 .test-result-content p {
