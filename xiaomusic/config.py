@@ -13,6 +13,7 @@ from xiaomusic.utils.system_utils import validate_proxy
 command_action_dict = {
     r"(?:播放)?下一首": "play_next",
     r"(?:播放)?上一首": "play_prev",
+    r"(?:播放|来点)(?:音乐|歌曲)$": "play",
     r"播放列表第(?P<index>\d+)首(?:歌(?:曲)?|音乐)?": "play_music_list_index",
     r"播放我(?P<is_favorite>喜欢)的(?P<artist>.+?)的(?:歌(?:曲)?|音乐)?$": "play",
     r"播放我(?P<is_favorite>喜欢)的(?:歌(?:曲)?|音乐)?$": "play",
@@ -40,15 +41,15 @@ command_action_dict = {
     r"播放(?P<artist>.+?)的(?:歌曲)?(?P<name>[^歌音乐]+?)(?:歌曲)?$": "play",
     r"播放(?P<artist>.+?)的(?:歌(?:曲)?|音乐)?$": "play",
     r"播放(?:歌(?:曲)?|音乐)?(?P<name>.+?)(?:歌(?:曲)?|音乐)?$": "play",
-    r"(?:播放|来点)(?:音乐|歌曲)": "play",
+    
     r"关机|暂停|停止|闭嘴": "stop",
     r"^(?P<minute>.+?)分钟后关机": "stop_after_minute",
     r"顺序播放": "set_play_type_seq",
     r"单曲播放": "set_play_type_sin",
-    r"单曲循环": "set_play_type_one",
+    r"单曲循环": "set_play_type_one", 
     r"全部循环": "set_play_type_all",
     r"随机播放": "set_play_type_rnd",
-    r"刷新(?:播放)?列表": "gen_music_list",
+    r"(?:刷新|更新|重新加载)(?:全部)?(?:播放)?(?:列表|歌单)": "gen_music_list",
     r"关闭语音口令|关闭语音指令|关闭口令功能": "set_pull_ask_off",
 }
 

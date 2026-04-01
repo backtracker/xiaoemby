@@ -72,6 +72,53 @@ test_data = [
     ("播放周杰伦的歌", "play", {"artist": "周杰伦"}),
     ("播放周杰伦的歌曲", "play", {"artist": "周杰伦"}),
     ("播放周杰伦的音乐", "play", {"artist": "周杰伦"}),
+
+    # 测试播放音乐/歌曲命令
+    ("播放音乐", "play", {}),
+    ("播放歌曲", "play", {}),
+    ("来点音乐", "play", {}),
+    ("来点歌曲", "play", {}),
+    
+    # 测试下一首/上一首命令
+    ("下一首", "play_next", {}),
+    ("播放下一首", "play_next", {}),
+    ("上一首", "play_prev", {}),
+    ("播放上一首", "play_prev", {}),
+    
+    # 测试播放列表第N首命令
+    ("播放列表第5首歌", "play_music_list_index", {"index": "5"}),
+    ("播放列表第10首歌曲", "play_music_list_index", {"index": "10"}),
+    ("播放列表第3首音乐", "play_music_list_index", {"index": "3"}),
+    ("播放列表第1首", "play_music_list_index", {"index": "1"}),
+    
+    # 测试停止命令
+    ("关机", "stop", {}),
+    ("暂停", "stop", {}),
+    ("停止", "stop", {}),
+    ("闭嘴", "stop", {}),
+    
+    # 测试定时关机命令
+    ("5分钟后关机", "stop_after_minute", {"minute": "5"}),
+    ("10分钟后关机", "stop_after_minute", {"minute": "10"}),
+    ("30分钟后关机", "stop_after_minute", {"minute": "30"}),
+    
+    # 测试播放类型设置命令
+    ("顺序播放", "set_play_type_seq", {}),
+    ("单曲播放", "set_play_type_sin", {}),
+    ("单曲循环", "set_play_type_one", {}),
+    ("全部循环", "set_play_type_all", {}),
+    ("随机播放", "set_play_type_rnd", {}),
+    
+    # 测试刷新播放列表命令
+    ("刷新播放列表", "gen_music_list", {}),
+    ("更新歌单", "gen_music_list", {}),
+    ("重新加载列表", "gen_music_list", {}),
+    ("刷新全部歌单", "gen_music_list", {}),
+    
+    # 测试关闭语音口令命令
+    ("关闭语音口令", "set_pull_ask_off", {}),
+    ("关闭语音指令", "set_pull_ask_off", {}),
+    ("关闭口令功能", "set_pull_ask_off", {}),
 ]
 
 
@@ -97,7 +144,7 @@ def test_command_matching(test_text, expected_action, expected_fields):
             
             # 确保没有额外的匹配字段（除了我们关心的字段）
             for field_name in matched_fields:
-                if field_name not in ["name", "artist", "is_favorite", "album", "genre", "index", "year"]:
+                if field_name not in ["name", "artist", "is_favorite", "album", "genre", "index", "year", "minute"]:
                     pytest.fail(f"意外匹配的字段: {field_name}")
             
             break

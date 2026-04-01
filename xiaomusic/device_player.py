@@ -192,6 +192,9 @@ class XiaoMusicDevice:
                 # 从播放列表中随机选择一首歌曲
                 name = random.choice(self._play_list)
                 self.log.info(f"随机播放歌曲: {name}")
+                # 直接播放从播放列表中选择的歌曲，不需要模糊搜索
+                await self._playmusic(name)
+                return
             else:
                 self.log.info(f"没有歌曲播放了 name:{name} search_key:{search_key}")
                 return

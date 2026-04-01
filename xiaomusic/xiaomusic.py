@@ -289,6 +289,10 @@ class XiaoMusic:
             data["enable_pull_ask"] = False
             await self.saveconfig(data)
             
+            # 同时执行停止播放操作
+            if did in self.device_manager.devices:
+                await self.stop(did=did, arg1="notts")
+            
             # 发送反馈消息
             self.log.info("语音口令已关闭")
             if did in self.device_manager.devices:

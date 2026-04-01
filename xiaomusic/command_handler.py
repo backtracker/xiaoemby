@@ -125,11 +125,14 @@ class CommandHandler:
             if match:
                 # 检查是否在激活命令中
                 active_cmd_arr = self.config.get_active_cmd_arr()
+                # 管理命令不受激活命令列表限制
+                management_commands = ['set_pull_ask_off']
                 if (
                     not ctrl_panel
                     and not device.is_playing
                     and active_cmd_arr
                     and action not in active_cmd_arr
+                    and action not in management_commands
                 ):
                     self.log.info(f"不在激活命令中 {action}")
                     continue
