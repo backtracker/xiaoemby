@@ -364,16 +364,22 @@ class EmbyUtil:
                 self.log.info(f"将中文数字转换后搜索：{name} -> {converted_name}")
                 converted_result = self.__search_music_internal(converted_name, artist, genre, is_favorite, album, years, min_premiere_date, max_premiere_date, limit)
         
-        # 优先使用原始搜索结果，如果原始搜索没有结果，则使用转换后的搜索结果
-        # 这样可以确保保持Emby返回的原始顺序
-        if original_result:
-            self.log.info(f"使用原始名称搜索结果：{len(original_result)}条")
+        # 比较两次搜索的结果数量，返回结果更多的那个
+        original_count = len(original_result)
+        converted_count = len(converted_result)
+        
+        if original_count > converted_count:
+            self.log.info(f"使用原始名称搜索结果：{original_count}条")
             self.log.info("返回原始结果列表：{}".format(original_result[:10])) if original_result else None
             return original_result
-        elif converted_result:
-            self.log.info(f"原始搜索无结果，使用转换后名称搜索结果：{len(converted_result)}条")
+        elif converted_count > original_count:
+            self.log.info(f"使用转换后名称搜索结果：{converted_count}条")
             self.log.info("返回转换后结果列表：{}".format(converted_result[:10])) if converted_result else None
             return converted_result
+        elif original_count > 0:  # 两者数量相同且都有结果，优先返回原始结果
+            self.log.info(f"原始和转换后搜索结果数量相同：{original_count}条，返回原始结果")
+            self.log.info("返回原始结果列表：{}".format(original_result[:10])) if original_result else None
+            return original_result
         else:
             self.log.info(f"原始和转换后搜索均无结果")
             return []
