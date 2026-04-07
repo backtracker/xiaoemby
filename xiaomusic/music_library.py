@@ -16,7 +16,7 @@ from dataclasses import asdict
 from urllib.parse import urlparse
 from xiaomusic.const import SUPPORT_MUSIC_TYPE
 from xiaomusic.events import CONFIG_CHANGED
-from xiaomusic.utils.text_utils import custom_sort_key, find_best_match, fuzzyfinder
+from xiaomusic.utils.text_utils import find_best_match, fuzzyfinder
 
 
 class MusicLibrary:
@@ -88,10 +88,6 @@ class MusicLibrary:
         # 全部，所有歌曲
         self.music_list["全部"] = list(self.all_music.keys())
         self.music_list["所有歌曲"] = list(self.all_music.keys())
-
-        # 歌单排序
-        for _, play_list in self.music_list.items():
-            play_list.sort(key=custom_sort_key)
 
         # 非自定义歌单
         self.default_music_list_names = list(self.music_list.keys())
@@ -303,49 +299,31 @@ class MusicLibrary:
         self.save_custom_play_list()
         return True
 
-    def update_music_list_json(self, list_name, update_list, append=False):
+    def update_music_list_json(self, list_name, update_list):
         """
-        更新内存中的播放列表，如果歌单存在则根据 append：False:覆盖； True:追加
+        更新内存中的播放列表，每次生成新的播放列表
         Args:
             list_name: 更新的歌单名称
-            update_list: 更新的歌单列表
-            append: 追加歌曲，默认 False
+            update_list: 更新的歌单列表（可以是歌曲名称列表、Audio对象列表或字典列表）
 
         Returns:
             list: 转换后的音乐项目列表
         """
-        # 获取或创建歌单
-        if list_name in self.music_list:
-            existing_musics = self.music_list[list_name]
-        else:
-            existing_musics = []
-
-        # 构建新歌单数据
+        # 构建新歌单数据，严格按照 update_list 的顺序
         new_music_names = []
         for item in update_list:
+            # 检查是否是字符串（歌曲名称）
+            if isinstance(item, str):
+                new_music_names.append(item)
             # 检查是否是Audio对象
-            if hasattr(item, 'name'):
+            elif hasattr(item, 'name'):
                 new_music_names.append(item.name)
             else:
                 # 处理字典形式的项目
                 new_music_names.append(item["name"])
 
-        if append:
-            # 追加模式：将新项目添加到现有歌单中，避免重复
-            existing_names = set(existing_musics)
-            for music_name in new_music_names:
-                if music_name not in existing_names:
-                    existing_musics.append(music_name)
-            self.music_list[list_name] = existing_musics
-        else:
-            # 覆盖模式：替换整个歌单
-            self.music_list[list_name] = new_music_names
-
-        # 更新 all_music 字典
-        for item in update_list:
-            if hasattr(item, 'name'):
-                music_name = item.name
-                self.all_music[music_name] = item
+        # 每次生成新的播放列表，严格按传入顺序
+        self.music_list[list_name] = list(new_music_names)
 
     def play_list_add_music(self, name, music_list):
         """歌单新增歌曲

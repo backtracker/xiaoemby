@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 from xiaomusic.const import NEED_USE_PLAY_MUSIC_API, TTS_COMMAND
 
 from xiaomusic.events import DEVICE_CONFIG_CHANGED
-from xiaomusic.utils.text_utils import custom_sort_key, list2str
+from xiaomusic.utils.text_utils import list2str
 
 
 class XiaoMusicDevice:

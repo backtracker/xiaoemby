@@ -418,23 +418,17 @@ class XiaoMusic:
                     # 构建播放列表
                     playlist_name = f"Emby音乐"
                     music_list = []
-                    # 直接将Audio对象存储到all_music字典中
+                    # 直接将Audio对象存储到all_music字典中，保持顺序
                     for audio in audio_list:
-                        music_name = f"{audio.name}"
+                        music_name = f"{audio.name} {audio.album_artist}"
                         self.music_library.all_music[music_name] = audio
-                        music_item = {
-                            "name": music_name,
-                            "url": audio.stream_url,
-                            "type": "emby",
-                            "duration": audio.duration
-                        }
-                        music_list.append(music_item)
+                        music_list.append(music_name)
                     
-                    # 更新音乐库
+                    # 更新音乐库，直接传递歌曲名称列表
                     self.music_library.update_music_list_json(playlist_name, music_list)
                     
                     # 播放音乐
-                    await self.do_play_music_list(did, playlist_name, music_list[0]["name"])
+                    await self.do_play_music_list(did, playlist_name, music_list[0])
                     return
                 else:
                     # Emby搜索未找到结果，返回
