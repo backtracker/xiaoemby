@@ -22,7 +22,9 @@ class Audio:
         self.file_path = ""
         self.stream_url = ""
         self.type = "emby"
-
+    
+    def __str__(self):
+        return f"Audio(name='{self.name}', album='{self.album}', album_artist='{self.album_artist}', duration={self.duration}, container='{self.container}',index={self.index},is_favorite={self.is_favorite})"
 
 
 class EmbyUtil:
@@ -62,7 +64,7 @@ class EmbyUtil:
         stream_url = f"/emby/Audio/{audio.id}/stream?Container={container_encoded}&api_key={api_key_encoded}"
         audio.stream_url = f"{self.host}{stream_url}"
 
-    def search_music(self, name=None, artist=None, genre=None, is_favorite: bool = None, album=None, years=None, min_premiere_date=None, max_premiere_date=None, limit=15) -> List[
+    def search_music(self, name=None, artist=None, genre=None, is_favorite: bool = None, album=None, years=None, min_premiere_date=None, max_premiere_date=None, limit=50) -> List[
         Audio]:
         audio_list = []  # 音乐列表
         is_favorite = bool(is_favorite)
@@ -77,7 +79,7 @@ class EmbyUtil:
             "SortBy": "Random",
             "api_key": self.api_key
         }
-
+        
         # 构建搜索关键词
         search_term = name
         payload.update({"SearchTerm": search_term}) if search_term is not None else None

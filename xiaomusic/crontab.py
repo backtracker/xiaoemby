@@ -166,13 +166,7 @@ class Crontab:
 
         self.add_job(expression, job)
 
-    # 设置播放类型任务
-    def add_job_set_play_type(self, expression, xiaomusic, did, arg1, **kwargs):
-        async def job():
-            play_type = int(arg1)
-            await xiaomusic.set_play_type(did, play_type, False)
 
-        self.add_job(expression, job)
 
     # 开启或关闭获取对话记录
     def add_job_set_pull_ask(self, expression, xiaomusic, did, arg1, **kwargs):

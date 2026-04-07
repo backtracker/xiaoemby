@@ -5,50 +5,46 @@ import json
 import os
 from dataclasses import asdict, dataclass, field
 from typing import get_type_hints
-from xiaomusic.const import PLAY_TYPE_ALL, PLAY_TYPE_ONE, PLAY_TYPE_RND, PLAY_TYPE_SEQ, PLAY_TYPE_SIN
+
 from xiaomusic.utils.system_utils import validate_proxy
 
 
 # 命令匹配字典
 command_action_dict = {
-    r"(?:播放)?下一首": "play_next",
-    r"(?:播放)?上一首": "play_prev",
-    r"(?:播放|来点)(?:音乐|歌曲)$": "play",
-    r"播放列表第(?P<index>\d+)首(?:歌(?:曲)?|音乐)?": "play_music_list_index",
-    r"播放我(?P<is_favorite>喜欢)的(?P<artist>.+?)的(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放我(?P<is_favorite>喜欢)的(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放(?P<artist>.*?)的(?:专辑)?(?P<album>.+?)(?:专辑)?(?:里的|中的)(?:歌(?:曲)?|音乐)?(?P<name>.*?)(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放(?P<artist>.*?)的专辑(?P<album>.+?)$": "play",
-    r"播放(?P<artist>.*?)的(?P<album>.+?)专辑$": "play",
-    r"播放专辑(?P<album>.+?)$": "play",
-    r"播放(?P<album>.+?)专辑$": "play",
-    r"播放(?P<artist>.+?)的(?P<genre>.+?)风格的(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放(?P<genre>.+?)风格的(?:歌(?:曲)?|音乐)?$": "play",
+    r"(?:播(?:放)?)?下一首": "play_next",
+    r"(?:播(?:放)?)?上一首": "play_prev",
+    r"(?:播(?:放)?|来点)(?:音乐|歌曲)$": "play",
+    r"播(?:放)?列表第(?P<index>\d+)首(?:歌(?:曲)?|音乐)?": "play_music_list_index",
+    r"播(?:放)?我(?P<is_favorite>喜欢)的(?P<artist>.+?)的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?我(?P<is_favorite>喜欢)的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<artist>.*?)的(?:专辑)?(?P<album>.+?)(?:专辑)?(?:里的|中的)(?:歌(?:曲)?|音乐)?(?P<name>.*?)(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<artist>.*?)的专辑(?P<album>.+?)$": "play",
+    r"播(?:放)?(?P<artist>.*?)的(?P<album>.+?)专辑$": "play",
+    r"播(?:放)?专辑(?P<album>.+?)$": "play",
+    r"播(?:放)?(?P<album>.+?)专辑$": "play",
+    r"播(?:放)?(?P<artist>.+?)的(?P<genre>.+?)风格的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<genre>.+?)风格的(?:歌(?:曲)?|音乐)?$": "play",
     # 年份相关命令 - 放在前面以避免被其他正则表达式匹配
-    r"播放(?P<artist>.+?)(?P<year>[零一二三四五六七八九十百千万亿]{4})年之前的(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放(?P<artist>.+?)(?P<year>[零一二三四五六七八九十百千万亿]{4})年之后的(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放(?P<year>[零一二三四五六七八九十百千万亿]{4})年之前的(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放(?P<year>[零一二三四五六七八九十百千万亿]{4})年之后的(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放(?P<artist>.+?)(?P<year>[零一二三四五六七八九十百千万亿]{4})年的(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放(?P<year>[零一二三四五六七八九十百千万亿]{4})年的(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放(?P<artist>.+?)(?P<year>\d{4})年之前的(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放(?P<artist>.+?)(?P<year>\d{4})年之后的(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放(?P<year>\d{4})年之前的(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放(?P<year>\d{4})年之后的(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放(?P<artist>.+?)(?P<year>\d{4})年的(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放(?P<year>\d{4})年的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<artist>.+?)(?P<year>[零一二三四五六七八九十百千万亿]{4})年之前的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<artist>.+?)(?P<year>[零一二三四五六七八九十百千万亿]{4})年之后的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<year>[零一二三四五六七八九十百千万亿]{4})年之前的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<year>[零一二三四五六七八九十百千万亿]{4})年之后的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<artist>.+?)(?P<year>[零一二三四五六七八九十百千万亿]{4})年的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<year>[零一二三四五六七八九十百千万亿]{4})年的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<artist>.+?)(?P<year>\d{4})年之前的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<artist>.+?)(?P<year>\d{4})年之后的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<year>\d{4})年之前的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<year>\d{4})年之后的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<artist>.+?)(?P<year>\d{4})年的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<year>\d{4})年的(?:歌(?:曲)?|音乐)?$": "play",
     # 其他播放命令
-    r"播放(?P<artist>.+?)的(?:歌曲)?(?P<name>[^歌音乐]+?)(?:歌曲)?$": "play",
-    r"播放(?P<artist>.+?)的(?:歌(?:曲)?|音乐)?$": "play",
-    r"播放(?:歌(?:曲)?|音乐)?(?P<name>.+?)(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?P<artist>.+?)的(?:歌曲)?(?P<name>[^歌音乐]+?)(?:歌曲)?$": "play",
+    r"播(?:放)?(?P<artist>.+?)的(?:歌(?:曲)?|音乐)?$": "play",
+    r"播(?:放)?(?:歌(?:曲)?|音乐)?(?P<name>.+?)(?:歌(?:曲)?|音乐)?$": "play",
     
     r"关机|暂停|停止|闭嘴": "stop",
     r"^(?P<minute>.+?)分钟后关机": "stop_after_minute",
-    r"顺序播放": "set_play_type_seq",
-    r"单曲播放": "set_play_type_sin",
-    r"单曲循环": "set_play_type_one", 
-    r"全部循环": "set_play_type_all",
-    r"随机播放": "set_play_type_rnd",
+
     r"(?:刷新|更新|重新加载)(?:全部)?(?:播放)?(?:列表|歌单)": "gen_music_list",
     r"关闭语音口令|关闭语音指令|关闭口令功能": "set_pull_ask_off",
 }
@@ -60,7 +56,7 @@ class Device:
     device_id: str = ""
     hardware: str = ""
     name: str = ""
-    play_type: int = PLAY_TYPE_RND
+    play_type: int = 0
     cur_music: str = ""
     cur_playlist: str = ""
     playlist2music: dict[str, str] = field(default_factory=dict)
@@ -88,7 +84,7 @@ class Config:
 
     active_cmd: str = os.getenv(
         "XIAOMUSIC_ACTIVE_CMD",
-        "play,set_play_type_rnd,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,set_play_type_one,set_play_type_all,set_play_type_sin,set_play_type_seq,gen_music_list,set_pull_ask_off,add_to_favorites,del_from_favorites,online_play,singer_play",
+        "play,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,gen_music_list,set_pull_ask_off,add_to_favorites,del_from_favorites,online_play,singer_play",
     )
     custom_play_list_json: str = os.getenv("XIAOMUSIC_CUSTOM_PLAY_LIST_JSON", "")
 
@@ -139,21 +135,7 @@ class Config:
     get_ask_by_mina: bool = (
         os.getenv("XIAOMUSIC_GET_ASK_BY_MINA", "false").lower() == "true"
     )
-    play_type_one_tts_msg: str = os.getenv(
-        "XIAOMUSIC_PLAY_TYPE_ONE_TTS_MSG", "已经设置为单曲循环"
-    )
-    play_type_all_tts_msg: str = os.getenv(
-        "XIAOMUSIC_PLAY_TYPE_ALL_TTS_MSG", "已经设置为全部循环"
-    )
-    play_type_rnd_tts_msg: str = os.getenv(
-        "XIAOMUSIC_PLAY_TYPE_RND_TTS_MSG", "已经设置为随机播放"
-    )
-    play_type_sin_tts_msg: str = os.getenv(
-        "XIAOMUSIC_PLAY_TYPE_SIN_TTS_MSG", "已经设置为单曲播放"
-    )
-    play_type_seq_tts_msg: str = os.getenv(
-        "XIAOMUSIC_PLAY_TYPE_SEQ_TTS_MSG", "已经设置为顺序播放"
-    )
+
     recently_added_playlist_len: int = int(
         os.getenv("XIAOMUSIC_RECENTLY_ADDED_PLAYLIST_LEN", "50")
     )
@@ -289,18 +271,7 @@ class Config:
             os.makedirs(self.temp_path)
         return self.temp_path
 
-    def get_play_type_tts(self, play_type):
-        if play_type == PLAY_TYPE_ONE:
-            return self.play_type_one_tts_msg
-        if play_type == PLAY_TYPE_ALL:
-            return self.play_type_all_tts_msg
-        if play_type == PLAY_TYPE_RND:
-            return self.play_type_rnd_tts_msg
-        if play_type == PLAY_TYPE_SIN:
-            return self.play_type_sin_tts_msg
-        if play_type == PLAY_TYPE_SEQ:
-            return self.play_type_seq_tts_msg
-        return ""
+
 
     def get_ignore_tag_dirs(self):
         return []

@@ -10,7 +10,7 @@ from xiaomusic.auth import AuthManager
 from xiaomusic.command_handler import CommandHandler
 from xiaomusic.config import Config
 from xiaomusic.config_manager import ConfigManager
-from xiaomusic.const import PLAY_TYPE_ALL, PLAY_TYPE_ONE, PLAY_TYPE_RND, PLAY_TYPE_SEQ, PLAY_TYPE_SIN
+
 from xiaomusic.conversation import ConversationPoller
 from xiaomusic.crontab import Crontab
 from xiaomusic.device_manager import DeviceManager
@@ -98,8 +98,6 @@ class XiaoMusic:
 
         # 启动时重新生成一次播放列表
         self.music_library.gen_all_music_list()
-
-
 
         # 初始化设备管理器（在配置准备好之后）
         self.device_manager = DeviceManager(
@@ -247,28 +245,7 @@ class XiaoMusic:
         url = arg1
         return await self.device_manager.devices[did].group_player_play(url)
 
-    # 口令:单曲循环
-    async def set_play_type_one(self, did="", **kwargs):
-        await self.set_play_type(did, PLAY_TYPE_ONE)
 
-    # 口令:全部循环
-    async def set_play_type_all(self, did="", **kwargs):
-        await self.set_play_type(did, PLAY_TYPE_ALL)
-
-    # 口令:随机播放
-    async def set_play_type_rnd(self, did="", **kwargs):
-        await self.set_play_type(did, PLAY_TYPE_RND)
-
-    # 口令:单曲播放
-    async def set_play_type_sin(self, did="", **kwargs):
-        await self.set_play_type(did, PLAY_TYPE_SIN)
-
-    # 口令:顺序播放
-    async def set_play_type_seq(self, did="", **kwargs):
-        await self.set_play_type(did, PLAY_TYPE_SEQ)
-
-    async def set_play_type(self, did="", play_type=PLAY_TYPE_RND, dotts=True):
-        await self.device_manager.devices[did].set_play_type(play_type, dotts)
 
     # 口令:刷新列表
     async def gen_music_list(self, **kwargs):

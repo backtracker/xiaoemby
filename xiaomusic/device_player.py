@@ -14,7 +14,8 @@ from miservice import miio_command
 from xiaomusic.config import Device
 if TYPE_CHECKING:
     from xiaomusic.xiaomusic import XiaoMusic
-from xiaomusic.const import NEED_USE_PLAY_MUSIC_API, PLAY_TYPE_ALL, PLAY_TYPE_ONE, PLAY_TYPE_RND, PLAY_TYPE_SEQ, PLAY_TYPE_SIN, TTS_COMMAND
+from xiaomusic.const import NEED_USE_PLAY_MUSIC_API, TTS_COMMAND
+
 from xiaomusic.events import DEVICE_CONFIG_CHANGED
 from xiaomusic.utils.text_utils import custom_sort_key, list2str
 
@@ -140,17 +141,10 @@ class XiaoMusicDevice:
             self.device.cur_playlist = "全部"
 
         list_name = self.device.cur_playlist
+        # 直接使用音乐库中的播放列表顺序，不进行重新排序
         self._play_list = copy.copy(self.xiaomusic.music_library.music_list[list_name])
-
-        if self.device.play_type == PLAY_TYPE_RND:
-            random.shuffle(self._play_list)
-            self.log.info(
-                f"随机打乱 {list_name} {list2str(self._play_list, self.config.verbose)}"
-            )
-        else:
-            self._play_list.sort(key=custom_sort_key)
-            self.log.info(
-                f"没打乱 {list_name} {list2str(self._play_list, self.config.verbose)}"
+        self.log.info(
+            f"播放列表 {list_name} {list2str(self._play_list, self.config.verbose)}"
             )
 
     async def play(self, name="", search_key=""):
@@ -228,19 +222,8 @@ class XiaoMusicDevice:
     async def _play_next(self):
         """播放下一首（内部实现）"""
         self.log.info("开始播放下一首")
-        name = self.get_cur_music()
-        if (
-            self.device.play_type == PLAY_TYPE_ALL
-            or self.device.play_type == PLAY_TYPE_RND
-            or self.device.play_type == PLAY_TYPE_SEQ
-            or name == ""
-            or (
-                (name not in self._play_list) and self.device.play_type != PLAY_TYPE_ONE
-            )
-        ):
-            name = self.get_next_music()
-            self.log.info(f"get_next_music {name}")
-        self.log.info(f"_play_next. name:{name}, cur_music:{self.get_cur_music()}")
+        name = self.get_next_music()
+        self.log.info(f"get_next_music {name}")
         if name == "":
             self.log.info("本地没有歌曲")
             return
@@ -253,16 +236,8 @@ class XiaoMusicDevice:
     async def _play_prev(self):
         """播放上一首（内部实现）"""
         self.log.info("开始播放上一首")
-        name = self.get_cur_music()
-        if (
-            self.device.play_type == PLAY_TYPE_ALL
-            or self.device.play_type == PLAY_TYPE_RND
-            or self.device.play_type == PLAY_TYPE_SEQ
-            or name == ""
-            or (name not in self._play_list)
-        ):
-            name = self.get_prev_music()
-        self.log.info(f"_play_prev. name:{name}, cur_music:{self.get_cur_music()}")
+        name = self.get_prev_music()
+        self.log.info(f"get_prev_music {name}")
         if name == "":
             await self.do_tts("本地没有歌曲")
             return
@@ -435,13 +410,11 @@ class XiaoMusicDevice:
             if direction == "next":
                 new_index = index + 1
                 if (
-                    self.device.play_type == PLAY_TYPE_SEQ
-                    and new_index >= play_list_len
+                    new_index >= play_list_len
                 ):
                     self.log.info("顺序播放结束")
                     return ""
-                if new_index >= play_list_len:
-                    new_index = 0
+
             elif direction == "prev":
                 new_index = index - 1
                 if new_index < 0:
@@ -671,11 +644,7 @@ class XiaoMusicDevice:
             try:
                 self.log.info(f"定时器时间到了 did: {self.did}")
                 # 直接执行播放下一首的逻辑，不再检查和取消自己
-                if self.device.play_type == PLAY_TYPE_SIN:
-                    self.log.info(f"单曲播放不继续播放下一首 did: {self.did}")
-                    await self.stop(arg1="notts")
-                else:
-                    await self._play_next()
+                await self._play_next()
             except Exception as e:
                 self.log.error(f"Execption {e}")
             finally:
@@ -726,16 +695,7 @@ class XiaoMusicDevice:
             self.log.warning(f"Execption {e}")
         return {"volume": 0, "status": 0}
 
-    async def set_play_type(self, play_type, dotts=True):
-        """设置播放类型"""
-        self.device.play_type = play_type
-        # 发布设备配置变更事件
-        if self.event_bus:
-            self.event_bus.publish(DEVICE_CONFIG_CHANGED)
-        if dotts:
-            tts = self.config.get_play_type_tts(play_type)
-            await self.do_tts(tts)
-        self.update_playlist()
+
 
     async def play_music_list(self, list_name, music_name):
         """播放指定播放列表"""
