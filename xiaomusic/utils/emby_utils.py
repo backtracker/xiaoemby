@@ -276,7 +276,7 @@ class EmbyUtil:
             "Recursive": True,
             "MediaTypes": "Audio",
             "Limit": limit,  # 总是获取多首歌曲
-            "SortBy": "Random",  # 使用名称排序而不是随机排序，确保结果顺序一致
+            "SortBy": "Random",  
             "api_key": self.api_key
         }
         
@@ -294,7 +294,6 @@ class EmbyUtil:
         if is_favorite:
             payload.update({"IsFavorite": is_favorite})
 
-        print(payload)
         try:
             r = requests.get(url=url, params=payload)
             self.log.info("Emby 接口返回：{} ...".format(r.text[:1000]))
@@ -351,7 +350,7 @@ class EmbyUtil:
         同时使用原始名称和转换后的名称请求Emby接口，取返回结果条数多的结果返回
         """
         all_locals = locals()
-        self.log.info("Emby查询参数：{}".format(all_locals))
+        #self.log.info("Emby查询参数：{}".format(all_locals))
         
         # 第一次使用原始名称搜索
         original_result = self.__search_music_internal(name, artist, genre, is_favorite, album, years, min_premiere_date, max_premiere_date, limit)
@@ -370,15 +369,15 @@ class EmbyUtil:
         
         if original_count > converted_count:
             self.log.info(f"使用原始名称搜索结果：{original_count}条")
-            self.log.info("返回原始结果列表：{}".format(original_result[:10])) if original_result else None
+            self.log.info("返回原始结果列表：{}".format([str(audio) for audio in original_result[:10]])) if original_result else None
             return original_result
         elif converted_count > original_count:
             self.log.info(f"使用转换后名称搜索结果：{converted_count}条")
-            self.log.info("返回转换后结果列表：{}".format(converted_result[:10])) if converted_result else None
+            self.log.info("返回转换后结果列表：{}".format([str(audio) for audio in converted_result[:10]])) if converted_result else None
             return converted_result
         elif original_count > 0:  # 两者数量相同且都有结果，优先返回原始结果
             self.log.info(f"原始和转换后搜索结果数量相同：{original_count}条，返回原始结果")
-            self.log.info("返回原始结果列表：{}".format(original_result[:10])) if original_result else None
+            self.log.info("返回原始结果列表：{}".format([str(audio) for audio in original_result[:10]])) if original_result else None
             return original_result
         else:
             self.log.info(f"原始和转换后搜索均无结果")

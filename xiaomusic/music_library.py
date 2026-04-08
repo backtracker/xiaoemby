@@ -77,9 +77,7 @@ class MusicLibrary:
                 # 获取Emby音乐
                 emby_music = self.emby_util.search_music(limit=50)
                 for audio in emby_music:
-                    # 构建歌曲名称（只使用歌曲名，与play方法保持一致）
-                    music_name = f"{audio.name}"
-                    # 添加到音乐库（存储Audio对象）
+                    music_name = f"{audio.name} - {audio.album} - {audio.album_artist}"
                     self.all_music[music_name] = audio
                 self.log.info(f"从Emby获取到 {len(emby_music)} 首歌曲")
             except Exception as e:

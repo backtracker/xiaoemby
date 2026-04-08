@@ -420,7 +420,7 @@ class XiaoMusic:
                     music_list = []
                     # 直接将Audio对象存储到all_music字典中，保持顺序
                     for audio in audio_list:
-                        music_name = f"{audio.name} {audio.album_artist}"
+                        music_name = f"{audio.name} - {audio.album} - {audio.album_artist}"
                         self.music_library.all_music[music_name] = audio
                         music_list.append(music_name)
                     
