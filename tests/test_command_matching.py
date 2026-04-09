@@ -175,6 +175,16 @@ test_data = [
     ("关闭语音口令", "set_pull_ask_off", {}),
     ("关闭语音指令", "set_pull_ask_off", {}),
     ("关闭口令功能", "set_pull_ask_off", {}),
+
+    # 测试添加收藏命令
+    ("收藏歌曲", "add_to_favorites", {}),
+    ("收藏音乐", "add_to_favorites", {}),
+    ("收藏当前歌曲", "add_to_favorites", {}),
+    ("收藏当前音乐", "add_to_favorites", {}),
+    ("添加歌曲到收藏", "add_to_favorites", {}),
+    ("添加音乐到收藏", "add_to_favorites", {}),
+    ("添加当前歌曲到收藏", "add_to_favorites", {}),
+    ("添加当前音乐到收藏", "add_to_favorites", {}),
 ]
 
 

@@ -485,6 +485,22 @@ class XiaoMusic:
             minute = chinese_to_number(str(minute_str))
         return await self.device_manager.devices[did].stop_after_minute(minute)
 
+    # 口令:收藏当前歌曲
+    async def add_to_favorites(self, did="", **kwargs):
+        cur_music = self.device_manager.devices[did].get_cur_music()
+        self.log.info(f"收藏当前歌曲: {cur_music}")
+        if not cur_music:
+            self.log.warning("没有正在播放的歌曲，无法收藏")
+            return False
+        music = self.music_library.all_music.get(cur_music)
+        if not music:
+            self.log.warning(f"在音乐库中未找到当前歌曲: {cur_music}")
+            return False
+        if self.emby_util:
+            return self.emby_util.favorite_audio(music.id)
+        self.log.warning("Emby未配置，无法收藏歌曲")
+        return False
+
 
 
     # 更新每个设备的歌单

@@ -16,6 +16,7 @@ command_action_dict = {
     r"^(?P<minute>.+?)分钟后关机$": "stop_after_minute",
     r"^(?:刷新|更新|重新加载)(?:全部)?(?:播放)?(?:列表|歌单)$": "gen_music_list",
     r"^(?:关闭语音口令|关闭语音指令|关闭口令功能)$": "set_pull_ask_off",
+    r"^(?:收藏(?:当前)?(?:歌曲|音乐)|添加(?:当前)?(?:歌曲|音乐)?到收藏)$": "add_to_favorites",
 
     r"^(?:播(?:放)?)?下一首$": "play_next",
     r"^(?:播(?:放)?)?上一首$": "play_prev",

@@ -383,6 +383,36 @@ class EmbyUtil:
             self.log.info(f"原始和转换后搜索均无结果")
             return []
 
+    def favorite_audio(self, audio_id: str) -> bool:
+        """
+        将指定的歌曲添加到收藏
+
+        参考 Emby API: POST /Users/{UserId}/FavoriteItems/{Id}
+        :param audio_id: 歌曲ID
+        :return: 成功返回 True，失败返回 False
+        """
+        url = f"{self.host}/Users/{self.user_id}/FavoriteItems/{audio_id}"
+
+        params = {
+            "api_key": self.api_key
+        }
+        headers = {
+            "Accept": "application/json"
+        }
+
+        try:
+            response = requests.post(url, headers=headers, params=params)
+
+            if response.status_code == 200:
+                user_data = response.json()
+                self.log.info(f"收藏歌曲成功, ID: {audio_id}, 状态码: {response.status_code}, 响应: {user_data}")
+                return user_data.get("IsFavorite", True)
+            else:
+                self.log.error(f"收藏歌曲失败, ID: {audio_id}, 状态码: {response.status_code}, 响应: {response.text}")
+                return False
+        except Exception as e:
+            self.log.error(f"请求 Emby API 收藏歌曲时发生异常: {e}")
+            return False
 
 if __name__ == '__main__':
     import logging
@@ -398,6 +428,5 @@ if __name__ == '__main__':
     #r = eu.search_music(name="东北民谣", artist="毛不易")
     # audio_list = eu.search_music( artist="游鸿明", years="2001")
     # print(audio_list[0].stream_url)
-    audio_list = eu.search_music( name='看我72变')
-    for audio in audio_list:
-        print(audio)
+    # audio_list = eu.search_music( name='看我72变')
+    #eu.favorite_audio(1055149)

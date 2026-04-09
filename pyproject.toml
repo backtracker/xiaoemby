@@ -1,6 +1,6 @@
 [project]
 name = "xiaoemby"
-version = "0.0.9"
+version = "0.0.10"
 description = "小爱音箱播放Emby音乐库"
 authors = [
 {name = "backtracker", email = "daihuarong@gmail.com"},
