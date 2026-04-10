@@ -39,41 +39,6 @@ pdm start
 - 默认填写本地的NAS地址和端口号即可
 - Emby的流媒体地址会通过配置的NAS地址由本程序代理转发
 
-### 外网访问配置
-
-如果需要从外网控制小爱音箱播放Emby音乐，需完成以下两步：
-1. 在本地nginx中配置代理（见下方配置示例）
-2. 将反向代理地址填入NAS地址配置项中
-
-```nginx
-location /xiaoemby/proxy/emby/audio/ { 
-    # 转发到本地流媒体地址 
-    proxy_pass http://<host>:<port>;
-    
-    # 关键：保留原始请求路径（必须） 
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    
-    # 流媒体优化配置 
-    proxy_buffering off;  # 关闭缓冲，实时传输 
-    proxy_cache off;      # 关闭缓存 
-    proxy_http_version 1.1;  # 支持 HTTP/1.1，适配流媒体 
-    proxy_set_header Connection "";  # 清除连接头，避免长连接问题 
-    
-    # 大文件传输配置 
-    client_max_body_size 0;  # 不限制请求体大小 
-    proxy_read_timeout 3600s;  # 超时时间设为 1 小时，适配大文件 
-    proxy_send_timeout 3600s;
-    
-    # 支持断点续传（流媒体必备） 
-    proxy_set_header Range $http_range;
-    proxy_set_header If-Range $http_if_range;
-    proxy_redirect off;
-}
-```
-
 ## 使用说明
 
 ### 语音控制命令
@@ -128,6 +93,41 @@ location /xiaoemby/proxy/emby/audio/ {
 | **L17A** | [Xiaomi Sound Pro](https://home.mi.com/baike/index.html#/detail?model=xiaomi.wifispeaker.l17a) |
 
 ## FAQ
+
+### 外网访问配置
+
+如果需要从外网控制小爱音箱播放Emby音乐，需完成以下两步：
+1. 在本地nginx中配置代理（见下方配置示例）
+2. 将反向代理地址填入NAS地址配置项中
+
+```nginx
+location /xiaoemby/proxy/emby/audio/ {
+    # 转发到本地流媒体地址
+    proxy_pass http://<host>:<port>;
+
+    # 关键：保留原始请求路径（必须）
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # 流媒体优化配置
+    proxy_buffering off;  # 关闭缓冲，实时传输
+    proxy_cache off;      # 关闭缓存
+    proxy_http_version 1.1;  # 支持 HTTP/1.1，适配流媒体
+    proxy_set_header Connection "";  # 清除连接头，避免长连接问题
+
+    # 大文件传输配置
+    client_max_body_size 0;  # 不限制请求体大小
+    proxy_read_timeout 3600s;  # 超时时间设为 1 小时，适配大文件
+    proxy_send_timeout 3600s;
+
+    # 支持断点续传（流媒体必备）
+    proxy_set_header Range $http_range;
+    proxy_set_header If-Range $http_if_range;
+    proxy_redirect off;
+}
+```
 
 ### 有了xiaomusic为什么会有这个项目？
 这是一个纯个人使用的项目。2024年开始关注xiaomusic项目，希望能找到支持Emby的解决方案，但长期未看到相关功能上线。为了满足自己的使用需求，于是自行开发了这个专注于Emby媒体库的精简版本。

@@ -181,6 +181,8 @@ test_data = [
     ("收藏音乐", "add_to_favorites", {}),
     ("收藏当前歌曲", "add_to_favorites", {}),
     ("收藏当前音乐", "add_to_favorites", {}),
+    ("收藏这首歌", "add_to_favorites", {}),
+    ("收藏这首歌曲", "add_to_favorites", {}),
     ("添加歌曲到收藏", "add_to_favorites", {}),
     ("添加音乐到收藏", "add_to_favorites", {}),
     ("添加当前歌曲到收藏", "add_to_favorites", {}),

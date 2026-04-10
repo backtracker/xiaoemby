@@ -487,7 +487,8 @@ class XiaoMusic:
 
     # 口令:收藏当前歌曲
     async def add_to_favorites(self, did="", **kwargs):
-        cur_music = self.device_manager.devices[did].get_cur_music()
+        device = self.device_manager.devices[did]
+        cur_music = device.get_cur_music()
         self.log.info(f"收藏当前歌曲: {cur_music}")
         if not cur_music:
             self.log.warning("没有正在播放的歌曲，无法收藏")
@@ -497,7 +498,11 @@ class XiaoMusic:
             self.log.warning(f"在音乐库中未找到当前歌曲: {cur_music}")
             return False
         if self.emby_util:
-            return self.emby_util.favorite_audio(music.id)
+            favorited = self.emby_util.favorite_audio(music.id)
+            if favorited:
+                await self.do_tts(did, f"歌曲收藏成功")
+                await device.play(cur_music)
+            return favorited
         self.log.warning("Emby未配置，无法收藏歌曲")
         return False
 
