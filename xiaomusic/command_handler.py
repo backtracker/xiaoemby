@@ -93,6 +93,32 @@ class CommandHandler:
                     else:
                         modified_groups[key] = value
                 
+                # 处理用户别名：如果匹配到user_alias，则设置is_favorite并移除user_alias
+                if "user_alias" in modified_groups and modified_groups["user_alias"]:
+                    user_alias = modified_groups.pop("user_alias")
+                    # 检查是否是有效的用户别名
+                    user = self.config.get_emby_user_by_alias(user_alias)
+                    if user:
+                        modified_groups["is_favorite"] = True
+                        modified_groups["emby_user_id"] = user.user_id
+                        self.log.info(f"匹配到用户别名: {user_alias} -> user_id: {user.user_id}")
+                    else:
+                        self.log.warning(f"未找到用户别名: {user_alias}，使用默认用户")
+                
+                # 处理"我喜欢"的情况：没有user_alias但有is_favorite时，确定使用哪个用户
+                if "is_favorite" in modified_groups and modified_groups["is_favorite"] and "emby_user_id" not in modified_groups:
+                    # 如果配置了多用户，使用默认用户
+                    if self.config.emby_users:
+                        default_user = self.config.get_default_emby_user()
+                        if default_user:
+                            modified_groups["emby_user_id"] = default_user.user_id
+                            self.log.info(f"使用默认用户: {default_user.alias} -> user_id: {default_user.user_id}")
+                    else:
+                        # 没有配置多用户，使用单独配置的emby_user_id
+                        if self.config.emby_user_id:
+                            modified_groups["emby_user_id"] = self.config.emby_user_id
+                            self.log.info(f"使用单独配置的emby_user_id: {self.config.emby_user_id}")
+                
                 # 传递修改后的参数
                 await func(did=did, arg1=oparg, **modified_groups)
             else:

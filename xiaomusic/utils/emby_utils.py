@@ -226,6 +226,9 @@ class Audio:
 
 class EmbyUtil:
     def __init__(self, host, user_id, api_key, log):
+        # 确保 host 包含协议前缀
+        if host and not host.startswith(("http://", "https://")):
+            host = f"http://{host}"  # 默认使用 http
         self.host = host
         self.user_id = user_id
         self.api_key = api_key
@@ -261,16 +264,21 @@ class EmbyUtil:
         stream_url = f"/emby/Audio/{audio.id}/stream?Container={container_encoded}&api_key={api_key_encoded}"
         audio.stream_url = f"{self.host}{stream_url}"
 
-    def __search_music_internal(self, name=None, artist=None, genre=None, is_favorite: bool = None, album=None, years=None, min_premiere_date=None, max_premiere_date=None, limit=50) -> List[
+    def __search_music_internal(self, name=None, artist=None, genre=None, is_favorite: bool = None, album=None, years=None, min_premiere_date=None, max_premiere_date=None, limit=50, user_id=None) -> List[
         Audio]:
         """
         内部搜索音乐的方法
+        
+        Args:
+            user_id: 可选的用户ID，如果提供则使用该ID，否则使用初始化时的user_id
         """
         original_album = album
         
         audio_list = []  # 音乐列表
         is_favorite = bool(is_favorite)
-        url = "{}/emby/Users/{}/Items".format(self.host, self.user_id)
+        # 使用传入的user_id或默认的user_id
+        current_user_id = user_id if user_id else self.user_id
+        url = "{}/emby/Users/{}/Items".format(self.host, current_user_id)
 
         payload = {
             "Recursive": True,
@@ -341,19 +349,22 @@ class EmbyUtil:
             return []
         return audio_list
 
-    def search_music(self, name=None, artist=None, genre=None, is_favorite: bool = None, album=None, years=None, min_premiere_date=None, max_premiere_date=None, limit=50) -> List[
+    def search_music(self, name=None, artist=None, genre=None, is_favorite: bool = None, album=None, years=None, min_premiere_date=None, max_premiere_date=None, limit=50, user_id=None) -> List[
         Audio]:
         """
         搜索音乐，支持中文数字转换
         
         如果name中包含中文数字（如"爱情三十六计"），会将其转换为阿拉伯数字（如"爱情36计"），
         同时使用原始名称和转换后的名称请求Emby接口，取返回结果条数多的结果返回
+        
+        Args:
+            user_id: 可选的用户ID，如果提供则使用该ID，否则使用初始化时的user_id
         """
         all_locals = locals()
         #self.log.info("Emby查询参数：{}".format(all_locals))
         
         # 第一次使用原始名称搜索
-        original_result = self.__search_music_internal(name, artist, genre, is_favorite, album, years, min_premiere_date, max_premiere_date, limit)
+        original_result = self.__search_music_internal(name, artist, genre, is_favorite, album, years, min_premiere_date, max_premiere_date, limit, user_id)
         
         # 如果name不为None且包含中文数字，则进行第二次搜索
         converted_result = []
@@ -361,7 +372,7 @@ class EmbyUtil:
             converted_name = ChineseNumberConverter.convert_chinese_numbers_in_string(name)
             if converted_name != name:  # 只有当转换后的名称与原始名称不同时才进行第二次搜索
                 self.log.info(f"将中文数字转换后搜索：{name} -> {converted_name}")
-                converted_result = self.__search_music_internal(converted_name, artist, genre, is_favorite, album, years, min_premiere_date, max_premiere_date, limit)
+                converted_result = self.__search_music_internal(converted_name, artist, genre, is_favorite, album, years, min_premiere_date, max_premiere_date, limit, user_id)
         
         # 比较两次搜索的结果数量，返回结果更多的那个
         original_count = len(original_result)

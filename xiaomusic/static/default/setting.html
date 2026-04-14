@@ -142,13 +142,25 @@
                     </div>
 
                     <div class="form-item">
-                        <label for="emby_user_id">Emby用户ID:</label>
+                        <label for="emby_user_id">Emby用户ID（兼容旧配置）:</label>
                         <input id="emby_user_id" type="text" value="" placeholder="请输入Emby用户ID" />
                     </div>
 
                     <div class="form-item">
                         <label for="emby_api_key">Emby API Key:</label>
                         <input id="emby_api_key" type="text" value="" placeholder="请输入Emby API Key" />
+                    </div>
+
+                    <!-- 多用户配置 -->
+                    <div class="form-item">
+                        <label>Emby多用户配置:</label>
+                        <div id="emby_users_container" style="margin-top: 10px;">
+                            <!-- 动态生成的用户配置项 -->
+                        </div>
+                        <button type="button" id="add_emby_user" class="mini-button" style="margin-top: 10px;">
+                            <span class="material-icons" style="font-size: 16px; vertical-align: middle;">add</span>
+                            添加用户
+                        </button>
                     </div>
 
 

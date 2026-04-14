@@ -24,9 +24,12 @@ command_action_dict = {
     r"^播(?:放)?列表第(?P<index>\d+)首(?:歌(?:曲)?|音乐)?$": "play_music_list_index",
 
     # ================== 2. 播放复杂句式 (需置于最前) ==================
-    # 2.1 喜爱特征
+    # 2.1 喜爱特征（"我喜欢"必须在用户别名之前，避免"我"被当作别名）
     r"^播(?:放)?我(?P<is_favorite>喜欢)的(?P<artist>.+?)的(?:歌(?:曲)?|音乐)?$": "play",
     r"^播(?:放)?我(?P<is_favorite>喜欢)的(?:歌(?:曲)?|音乐)?$": "play",
+    # 2.1.1 用户别名喜爱特征（支持用户别名）
+    r"^播(?:放)?(?P<user_alias>.+?)(?:喜欢|收藏)的(?P<artist>.+?)的(?:歌(?:曲)?|音乐)?$": "play",
+    r"^播(?:放)?(?P<user_alias>.+?)(?:喜欢|收藏)的(?:歌(?:曲)?|音乐)?$": "play",
 
     # 2.2 专辑里的歌曲
     r"^播(?:放)?(?P<artist>.+?)的(?:专辑)?(?P<album>.+?)(?:专辑)?(?:里的|中的)(?:歌(?:曲)?|音乐)?(?P<name>.+?)(?:歌(?:曲)?|音乐)?$": "play",
@@ -69,6 +72,14 @@ command_action_dict = {
     r"^播(?:放)?(?P<name>.+?)$": "play",
 }
 @dataclass
+class EmbyUser:
+    """Emby用户配置"""
+    user_id: str = ""
+    alias: str = ""  # 用户别名，用于语音指令匹配
+    is_default: bool = False  # 是否为默认用户
+
+
+@dataclass
 class Device:
     did: str = ""
     device_id: str = ""
@@ -97,8 +108,9 @@ class Config:
 
     # Emby配置
     emby_host: str = os.getenv("XIAOMUSIC_EMBY_HOST", "")
-    emby_user_id: str = os.getenv("XIAOMUSIC_EMBY_USER_ID", "")
+    emby_user_id: str = os.getenv("XIAOMUSIC_EMBY_USER_ID", "")  # 保留兼容旧配置
     emby_api_key: str = os.getenv("XIAOMUSIC_EMBY_API_KEY", "")
+    emby_users: dict[str, EmbyUser] = field(default_factory=dict)  # 多用户配置
 
     active_cmd: str = os.getenv(
         "XIAOMUSIC_ACTIVE_CMD",
@@ -194,6 +206,16 @@ class Config:
             if not self.hostname.startswith(("http://", "https://")):
                 self.hostname = f"http://{self.hostname}"  # 默认 http
 
+        # 兼容旧配置：如果emby_users为空但emby_user_id不为空，则迁移到新格式
+        if not self.emby_users and self.emby_user_id:
+            self.emby_users = {
+                "default": EmbyUser(
+                    user_id=self.emby_user_id,
+                    alias="默认",
+                    is_default=True
+                )
+            }
+
         self.init()
         # 保存配置到 config-example.json 文件
         if self.enable_config_example:
@@ -224,6 +246,10 @@ class Config:
                     converted_value = {}
                     for kk, vv in v.items():
                         converted_value[kk] = Device(**vv)
+                elif expected_type == dict[str, EmbyUser]:
+                    converted_value = {}
+                    for kk, vv in v.items():
+                        converted_value[kk] = EmbyUser(**vv)
                 else:
                     converted_value = expected_type(v)
                 return converted_value
@@ -307,3 +333,33 @@ class Config:
         """获取网络地址"""
         host = self.hostname.split("//", 1)[1]
         return f"{host}:{self.public_port}"
+
+    def get_default_emby_user(self) -> EmbyUser | None:
+        """获取默认Emby用户"""
+        for user in self.emby_users.values():
+            if user.is_default:
+                return user
+        # 如果没有设置默认用户，返回第一个用户
+        if self.emby_users:
+            return next(iter(self.emby_users.values()))
+        return None
+
+    def get_emby_user_by_alias(self, alias: str) -> EmbyUser | None:
+        """根据别名获取Emby用户"""
+        for user in self.emby_users.values():
+            if user.alias == alias:
+                return user
+        return None
+
+    def get_emby_user_id_by_alias(self, alias: str | None) -> str:
+        """根据别名获取Emby用户ID，如果别名为空则返回默认用户ID"""
+        if alias:
+            user = self.get_emby_user_by_alias(alias)
+            if user:
+                return user.user_id
+        # 如果没有找到或别名为空，返回默认用户ID
+        default_user = self.get_default_emby_user()
+        if default_user:
+            return default_user.user_id
+        # 兼容旧配置
+        return self.emby_user_id

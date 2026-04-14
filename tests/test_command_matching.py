@@ -4,7 +4,21 @@ from xiaomusic.config import command_action_dict
 
 # 测试数据：(测试文本, 期望动作, 期望匹配字段)
 test_data = [
-    # 测试播放我喜欢的歌曲
+    # 测试播放用户别名喜欢的歌曲（新增多用户功能）
+    ("播放爸爸喜欢的歌", "play", {"user_alias": "爸爸"}),
+    ("播放妈妈喜欢的歌曲", "play", {"user_alias": "妈妈"}),
+    ("播放小明收藏的音乐", "play", {"user_alias": "小明"}),
+    ("播爸爸喜欢的歌", "play", {"user_alias": "爸爸"}),
+    ("播妈妈收藏的歌曲", "play", {"user_alias": "妈妈"}),
+    
+    # 测试播放用户别名喜欢的歌手的音乐
+    ("播放爸爸喜欢的周杰伦的歌", "play", {"user_alias": "爸爸", "artist": "周杰伦"}),
+    ("播放妈妈收藏的邓丽君的歌曲", "play", {"user_alias": "妈妈", "artist": "邓丽君"}),
+    ("播放小明喜欢的朴树的音乐", "play", {"user_alias": "小明", "artist": "朴树"}),
+    ("播爸爸喜欢的周杰伦的歌", "play", {"user_alias": "爸爸", "artist": "周杰伦"}),
+    ("播妈妈收藏的邓丽君的歌曲", "play", {"user_alias": "妈妈", "artist": "邓丽君"}),
+    
+    # 测试播放我喜欢的歌曲（使用默认用户）
     ("播放我喜欢的歌曲", "play", {"is_favorite": "喜欢"}),
     ("播放我喜欢的音乐", "play", {"is_favorite": "喜欢"}),
     ("播我喜欢的歌曲", "play", {"is_favorite": "喜欢"}),
@@ -212,7 +226,7 @@ def test_command_matching(test_text, expected_action, expected_fields):
             
             # 确保没有额外的匹配字段（除了我们关心的字段）
             for field_name in matched_fields:
-                if field_name not in ["name", "artist", "is_favorite", "album", "genre", "index", "year", "minute"]:
+                if field_name not in ["name", "artist", "is_favorite", "album", "genre", "index", "year", "minute", "user_alias"]:
                     pytest.fail(f"意外匹配的字段: {field_name}")
             
             break

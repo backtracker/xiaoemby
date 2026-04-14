@@ -357,6 +357,7 @@ class XiaoMusic:
         genre = kwargs.get("genre", "")
         is_favorite = kwargs.get("is_favorite", None)
         year = kwargs.get("year", None)
+        emby_user_id = kwargs.get("emby_user_id", None)  # 获取指定的用户ID
         
         # 转换中文数字的年份为阿拉伯数字
         if year:
@@ -400,7 +401,7 @@ class XiaoMusic:
             try:
                 # 当name为空时，传递None给search_music方法
                 emby_name = name if name else None
-                self.log.info(f"使用 Emby 搜索音乐: name={emby_name}, artist={artist}, album={album}, genre={genre}, is_favorite={is_favorite}, years={years}, min_premiere_date={min_premiere_date}, max_premiere_date={max_premiere_date}")
+                self.log.info(f"使用 Emby 搜索音乐: name={emby_name}, artist={artist}, album={album}, genre={genre}, is_favorite={is_favorite}, years={years}, min_premiere_date={min_premiere_date}, max_premiere_date={max_premiere_date}, emby_user_id={emby_user_id}")
                 # 使用 asyncio.to_thread 运行同步方法
                 audio_list = await asyncio.to_thread(
                     self.emby_util.search_music,
@@ -411,7 +412,8 @@ class XiaoMusic:
                     is_favorite=is_favorite,
                     years=years,
                     min_premiere_date=min_premiere_date,
-                    max_premiere_date=max_premiere_date
+                    max_premiere_date=max_premiere_date,
+                    user_id=emby_user_id  # 传递用户ID
                 )
                 
                 if audio_list:

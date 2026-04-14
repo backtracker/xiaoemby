@@ -4,7 +4,55 @@
 """
 
 import json
+import os
+import stat
 from dataclasses import asdict
+
+
+def _fix_file_permissions(filepath):
+    """修复文件权限问题
+    
+    在Windows上，文件可能被设置为隐藏或只读属性，导致写入失败。
+    此函数会移除这些属性以确保文件可写。
+    
+    Args:
+        filepath: 文件路径
+    """
+    if os.path.exists(filepath):
+        try:
+            # Windows特殊处理：使用Windows API移除隐藏和只读属性
+            if os.name == 'nt':
+                import ctypes
+                from ctypes import wintypes
+                
+                # Windows API常量
+                FILE_ATTRIBUTE_HIDDEN = 0x02
+                FILE_ATTRIBUTE_READONLY = 0x01
+                FILE_ATTRIBUTE_NORMAL = 0x80
+                
+                # 获取当前文件属性
+                GetFileAttributesW = ctypes.windll.kernel32.GetFileAttributesW
+                GetFileAttributesW.argtypes = [wintypes.LPCWSTR]
+                GetFileAttributesW.restype = wintypes.DWORD
+                
+                SetFileAttributesW = ctypes.windll.kernel32.SetFileAttributesW
+                SetFileAttributesW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD]
+                SetFileAttributesW.restype = wintypes.BOOL
+                
+                attrs = GetFileAttributesW(filepath)
+                if attrs != 0xFFFFFFFF:  # INVALID_FILE_ATTRIBUTES
+                    # 移除隐藏和只读属性
+                    new_attrs = attrs & ~(FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_READONLY)
+                    # 如果所有属性都被移除，设置为NORMAL
+                    if new_attrs == 0:
+                        new_attrs = FILE_ATTRIBUTE_NORMAL
+                    SetFileAttributesW(filepath, new_attrs)
+            else:
+                # Unix/Linux处理：确保文件可写
+                os.chmod(filepath, stat.S_IWRITE | stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
+        except Exception as e:
+            # 如果修复失败，不抛出异常，让后续操作正常处理
+            pass
 
 
 class ConfigManager:
@@ -57,6 +105,10 @@ class ConfigManager:
             data: 要保存的配置数据（字典格式）
         """
         filename = self.config.getsettingfile()
+        
+        # 在写入前确保文件可写（修复可能的隐藏/只读属性）
+        _fix_file_permissions(filename)
+        
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         self.log.info(f"Configuration saved to {filename}")

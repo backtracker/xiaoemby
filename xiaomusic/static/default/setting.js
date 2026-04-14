@@ -209,9 +209,16 @@ $(function () {
       }
     }
 
+    // 处理Emby多用户配置
+    if (data.emby_users && typeof data.emby_users === 'object') {
+      renderEmbyUsers(data.emby_users);
+    } else {
+      renderEmbyUsers({});
+    }
+
     // 处理其他配置项
     for (const key in data) {
-      if (key === "hostname" || key === "public_port" || key === "port" || key === "emby_host") continue; // 跳过已经处理的字段
+      if (key === "hostname" || key === "public_port" || key === "port" || key === "emby_host" || key === "emby_users") continue; // 跳过已经处理的字段
       const $element = $("#" + key);
       if ($element.length) {
         if (data[key] === true) {
@@ -281,6 +288,9 @@ $(function () {
     const embyHost = embySpecialFields.emby_host_input || "127.0.0.1";
     const embyPort = embySpecialFields.emby_port || "48096";
     data["emby_host"] = `${embyProtocol}://${embyHost}:${embyPort}`;
+    
+    // 添加Emby多用户配置
+    data["emby_users"] = getEmbyUsersConfig();
     
     var did_list = getSelectedDids("#mi_did");
     data["mi_did"] = did_list;
@@ -586,4 +596,113 @@ $(function () {
       e.preventDefault();
     }
   });
+
+  // ============ Emby多用户配置功能 ============
+  function renderEmbyUsers(embyUsers) {
+    const container = $("#emby_users_container");
+    container.empty();
+    
+    if (!embyUsers || Object.keys(embyUsers).length === 0) {
+      container.append('<p style="color: #666;">暂无用户配置，点击下方"添加用户"按钮添加</p>');
+      return;
+    }
+    
+    Object.keys(embyUsers).forEach(function(key) {
+      const user = embyUsers[key];
+      addEmbyUserRow(user.user_id, user.alias, user.is_default);
+    });
+  }
+
+  function addEmbyUserRow(userId = "", alias = "", isDefault = false) {
+    const container = $("#emby_users_container");
+    const index = container.children('.emby-user-row').length;
+    
+    const userRow = $('<div>', {
+      class: 'emby-user-row',
+      style: 'display: flex; gap: 10px; margin-bottom: 10px; align-items: center;'
+    });
+    
+    const userIdInput = $('<input>', {
+      type: 'text',
+      class: 'emby-user-id',
+      placeholder: '用户ID',
+      value: userId,
+      style: 'flex: 2;'
+    });
+    
+    const aliasInput = $('<input>', {
+      type: 'text',
+      class: 'emby-user-alias',
+      placeholder: '别名（如：爸爸、妈妈）',
+      value: alias,
+      style: 'flex: 2;'
+    });
+    
+    const defaultCheckbox = $('<input>', {
+      type: 'checkbox',
+      class: 'emby-user-default',
+      checked: isDefault
+    });
+    
+    const defaultLabel = $('<label>', {
+      style: 'display: flex; align-items: center; gap: 5px; white-space: nowrap;'
+    }).append(defaultCheckbox).append('默认用户');
+    
+    const deleteBtn = $('<button>', {
+      type: 'button',
+      class: 'mini-button',
+      style: 'background: #f44336; color: white;',
+      text: '删除'
+    }).on('click', function() {
+      userRow.remove();
+      // 如果删除的是默认用户，自动设置第一个为默认
+      if (isDefault) {
+        const firstCheckbox = container.find('.emby-user-default').first();
+        if (firstCheckbox.length) {
+          firstCheckbox.prop('checked', true);
+        }
+      }
+    });
+    
+    // 确保只有一个默认用户
+    defaultCheckbox.on('change', function() {
+      if ($(this).prop('checked')) {
+        container.find('.emby-user-default').not(this).prop('checked', false);
+      }
+    });
+    
+    userRow.append(userIdInput).append(aliasInput).append(defaultLabel).append(deleteBtn);
+    container.append(userRow);
+  }
+
+  function getEmbyUsersConfig() {
+    const embyUsers = {};
+    let index = 0;
+    
+    $("#emby_users_container .emby-user-row").each(function() {
+      const userId = $(this).find('.emby-user-id').val().trim();
+      const alias = $(this).find('.emby-user-alias').val().trim();
+      const isDefault = $(this).find('.emby-user-default').prop('checked');
+      
+      if (userId && alias) {
+        const key = `user_${index}`;
+        embyUsers[key] = {
+          user_id: userId,
+          alias: alias,
+          is_default: isDefault
+        };
+        index++;
+      }
+    });
+    
+    return embyUsers;
+  }
+
+  // 绑定添加用户按钮事件
+  $("#add_emby_user").on("click", function() {
+    addEmbyUserRow();
+  });
+
+  // 将函数暴露到全局作用域，以便在保存配置时使用
+  window.getEmbyUsersConfig = getEmbyUsersConfig;
 });
