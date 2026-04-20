@@ -65,7 +65,7 @@ class CommandHandler:
 
             # 执行命令
             func = getattr(self.xiaomusic, opvalue)
-            if (opvalue == "play" or opvalue == "stop_after_minute" or opvalue == "play_music_list_index") and match_groups:
+            if (opvalue == "play" or opvalue == "stop_after_minute" or opvalue == "play_music_list_index" or opvalue == "add_to_favorites") and match_groups:
                 # 读取替换规则
                 import json
                 import os
@@ -93,8 +93,8 @@ class CommandHandler:
                     else:
                         modified_groups[key] = value
                 
-                # 处理用户别名：如果匹配到user_alias，则设置is_favorite并移除user_alias
-                if "user_alias" in modified_groups and modified_groups["user_alias"]:
+                # 处理用户别名：如果匹配到user_alias，则设置is_favorite并移除user_alias（仅用于play命令）
+                if opvalue == "play" and "user_alias" in modified_groups and modified_groups["user_alias"]:
                     user_alias = modified_groups.pop("user_alias")
                     # 检查是否是有效的用户别名
                     user = self.config.get_emby_user_by_alias(user_alias)
@@ -105,8 +105,8 @@ class CommandHandler:
                     else:
                         self.log.warning(f"未找到用户别名: {user_alias}，使用默认用户")
                 
-                # 处理"我喜欢"的情况：没有user_alias但有is_favorite时，确定使用哪个用户
-                if "is_favorite" in modified_groups and modified_groups["is_favorite"] and "emby_user_id" not in modified_groups:
+                # 处理"我喜欢"的情况：没有user_alias但有is_favorite时，确定使用哪个用户（仅用于play命令）
+                if opvalue == "play" and "is_favorite" in modified_groups and modified_groups["is_favorite"] and "emby_user_id" not in modified_groups:
                     # 如果配置了多用户，使用默认用户
                     if self.config.emby_users:
                         default_user = self.config.get_default_emby_user()

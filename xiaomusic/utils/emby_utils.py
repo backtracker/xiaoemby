@@ -394,15 +394,20 @@ class EmbyUtil:
             self.log.info(f"原始和转换后搜索均无结果")
             return []
 
-    def favorite_audio(self, audio_id: str) -> bool:
+    def favorite_audio(self, audio_id: str, user_id: str = None) -> bool:
         """
         将指定的歌曲添加到收藏
 
         参考 Emby API: POST /Users/{UserId}/FavoriteItems/{Id}
         :param audio_id: 歌曲ID
+        :param user_id: 用户ID，如果为None则使用默认用户ID
         :return: 成功返回 True，失败返回 False
         """
-        url = f"{self.host}/Users/{self.user_id}/FavoriteItems/{audio_id}"
+        # 如果没有指定user_id，使用默认的user_id
+        if user_id is None:
+            user_id = self.user_id
+            
+        url = f"{self.host}/Users/{user_id}/FavoriteItems/{audio_id}"
 
         params = {
             "api_key": self.api_key
@@ -416,7 +421,7 @@ class EmbyUtil:
 
             if response.status_code == 200:
                 user_data = response.json()
-                self.log.info(f"收藏歌曲成功, ID: {audio_id}, 状态码: {response.status_code}, 响应: {user_data}")
+                self.log.info(f"收藏歌曲成功, ID: {audio_id}, user_id: {user_id}, 状态码: {response.status_code}, 响应: {user_data}")
                 return user_data.get("IsFavorite", True)
             else:
                 self.log.error(f"收藏歌曲失败, ID: {audio_id}, 状态码: {response.status_code}, 响应: {response.text}")

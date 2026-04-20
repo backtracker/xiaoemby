@@ -167,6 +167,14 @@ test_data = [
     ("播列表第10首歌曲", "play_music_list_index", {"index": "10"}),
     ("播列表第3首音乐", "play_music_list_index", {"index": "3"}),
     ("播列表第1首", "play_music_list_index", {"index": "1"}),
+    # 测试播放列表第N首命令（中文数字格式）
+    ("播放列表第一首歌", "play_music_list_index", {"index": "一"}),
+    ("播放列表第三首歌曲", "play_music_list_index", {"index": "三"}),j
+    ("播放列表第五首音乐", "play_music_list_index", {"index": "五"}),
+    ("播放列表第十首歌", "play_music_list_index", {"index": "十"}),
+    ("播放列表第十二首歌曲", "play_music_list_index", {"index": "十二"}),
+    ("播列表第十五首歌", "play_music_list_index", {"index": "十五"}),
+    ("播列表第三十首", "play_music_list_index", {"index": "三十"}),
     
     # 测试停止命令
     ("关机", "stop", {}),
@@ -190,7 +198,21 @@ test_data = [
     ("关闭语音指令", "set_pull_ask_off", {}),
     ("关闭口令功能", "set_pull_ask_off", {}),
 
-    # 测试添加收藏命令
+    # 测试添加收藏命令（多用户支持）
+    # 用户别名收藏
+    ("爸爸收藏歌曲", "add_to_favorites", {"user_alias": "爸爸"}),
+    ("妈妈收藏音乐", "add_to_favorites", {"user_alias": "妈妈"}),
+    ("小明收藏当前歌曲", "add_to_favorites", {"user_alias": "小明"}),
+    ("爸爸收藏当前音乐", "add_to_favorites", {"user_alias": "爸爸"}),
+    ("妈妈收藏这首歌", "add_to_favorites", {"user_alias": "妈妈"}),
+    ("小明收藏这首歌曲", "add_to_favorites", {"user_alias": "小明"}),
+    ("爸爸添加到收藏", "add_to_favorites", {"user_alias": "爸爸"}),
+    ("妈妈添加歌曲到收藏", "add_to_favorites", {"user_alias": "妈妈"}),
+    ("小明添加音乐到收藏", "add_to_favorites", {"user_alias": "小明"}),
+    ("爸爸添加当前歌曲到收藏", "add_to_favorites", {"user_alias": "爸爸"}),
+    ("妈妈添加当前音乐到收藏", "add_to_favorites", {"user_alias": "妈妈"}),
+    
+    # 普通收藏（使用默认用户）
     ("收藏歌曲", "add_to_favorites", {}),
     ("收藏音乐", "add_to_favorites", {}),
     ("收藏当前歌曲", "add_to_favorites", {}),

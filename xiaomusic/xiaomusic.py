@@ -317,8 +317,8 @@ class XiaoMusic:
                 # 如果转换失败，尝试中文数字转换
                 index = chinese_to_number(str(index))
             
-            # 提取列表名
-            patternarg = r"^播放列表第\d+首(.*)"
+            # 提取列表名（支持阿拉伯数字和中文数字）
+            patternarg = r"^播(?:放)?列表第(?:\d+|[零一二三四五六七八九十百千万亿]+)首(.*)"
             matcharg = re.match(patternarg, arg1)
             list_name = matcharg.groups()[0] if matcharg else ""
             list_name = self._find_real_music_list_name(list_name)
@@ -491,7 +491,11 @@ class XiaoMusic:
     async def add_to_favorites(self, did="", **kwargs):
         device = self.device_manager.devices[did]
         cur_music = device.get_cur_music()
-        self.log.info(f"收藏当前歌曲: {cur_music}")
+        
+        # 获取用户别名（如果有）
+        user_alias = kwargs.get("user_alias")
+        
+        self.log.info(f"收藏当前歌曲: {cur_music}, 用户别名: {user_alias}")
         if not cur_music:
             self.log.warning("没有正在播放的歌曲，无法收藏")
             return False
@@ -500,9 +504,27 @@ class XiaoMusic:
             self.log.warning(f"在音乐库中未找到当前歌曲: {cur_music}")
             return False
         if self.emby_util:
-            favorited = self.emby_util.favorite_audio(music.id)
+            # 根据用户别名获取user_id
+            user_id = None
+            if user_alias:
+                user = self.config.get_emby_user_by_alias(user_alias)
+                if user:
+                    user_id = user.user_id
+                    self.log.info(f"使用用户别名 '{user_alias}' 对应的 user_id: {user_id}")
+                else:
+                    self.log.warning(f"未找到用户别名 '{user_alias}'，使用默认用户")
+            
+            # 如果没有指定user_id，使用默认用户
+            if not user_id:
+                default_user = self.config.get_default_emby_user()
+                if default_user:
+                    user_id = default_user.user_id
+                    self.log.info(f"使用默认用户: {default_user.alias} -> user_id: {user_id}")
+            
+            favorited = self.emby_util.favorite_audio(music.id, user_id=user_id)
             if favorited:
-                await self.do_tts(did, f"歌曲收藏成功")
+                user_name = user_alias if user_alias else "默认用户"
+                await self.do_tts(did, f"{user_name}收藏歌曲成功")
                 await device.play(cur_music)
             return favorited
         self.log.warning("Emby未配置，无法收藏歌曲")
