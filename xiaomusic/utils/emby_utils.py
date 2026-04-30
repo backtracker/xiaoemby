@@ -1,6 +1,7 @@
 import requests
 import os
 import re
+import uuid
 from typing import List, Optional
 import urllib.parse
 
@@ -204,7 +205,8 @@ class ChineseNumberConverter:
 class Audio:
     """音频类，用于存储音乐信息"""
     def __init__(self, name="", id="", index=0, duration=0, album="", album_id="", 
-                 album_artist="", artist_items=None, album_artists=None, is_favorite=False):
+                 album_artist="", artist_items=None, album_artists=None, is_favorite=False,
+                 user_id=""):
         self.name = name
         self.id = id
         self.index = index
@@ -215,6 +217,9 @@ class Audio:
         self.artist_items = artist_items or []
         self.album_artists = album_artists or []
         self.is_favorite = is_favorite
+        self.user_id = user_id  # 搜索时使用的 Emby 用户 ID
+        self.play_session_id = ""  # PlaybackInfo 返回的播放会话 ID
+        self.media_source_id = ""  # 媒体源 ID
         self.container = "flac"
         self.file_path = ""
         self.stream_url = ""
@@ -225,7 +230,11 @@ class Audio:
 
 
 class EmbyUtil:
-    def __init__(self, host, user_id, api_key, log):
+    # Emby 客户端标识常量
+    CLIENT_NAME = "XiaoEmby"
+    DEVICE_NAME = "小爱音箱"
+
+    def __init__(self, host, user_id, api_key, log, version="1.0.0"):
         # 确保 host 包含协议前缀
         if host and not host.startswith(("http://", "https://")):
             host = f"http://{host}"  # 默认使用 http
@@ -233,22 +242,48 @@ class EmbyUtil:
         self.user_id = user_id
         self.api_key = api_key
         self.log = log
+        self.version = version
+        # 生成稳定的设备 ID（基于 host + api_key 的哈希，确保重启后一致）
+        self._device_id = f"xiaoemby-{uuid.uuid5(uuid.NAMESPACE_DNS, f'{host}-{api_key}')}"
+
+    def _get_auth_header(self):
+        """构建 Emby 请求 Headers，包含设备标识和认证信息
+        
+        注意：HTTP Header 仅支持 ASCII 字符，中文需要 URL 编码
+        """
+        device_encoded = urllib.parse.quote(self.DEVICE_NAME)
+        return {
+            "X-Emby-Authorization": (
+                f'MediaBrowser Client="{self.CLIENT_NAME}", '
+                f'Device="{device_encoded}", '
+                f'DeviceId="{self._device_id}", '
+                f'Version="{self.version}"'
+            ),
+            "X-Emby-Token": self.api_key,
+            "Content-Type": "application/json"
+        }
 
     def __set_audio_container(self, audio: Audio):
         """
-        设置音频流 container 和 file_path
+        设置音频流 container、file_path，并提取 PlaySessionId 和 MediaSourceId
         """
         url = f"{self.host}/Items/{audio.id}/PlaybackInfo?api_key={self.api_key}"
         response = requests.get(url)
         if response.status_code == 200:
             c = "mp3"
             try:
-                media_sources = response.json().get("MediaSources", [])
+                resp_json = response.json()
+                # 提取 PlaySessionId
+                audio.play_session_id = resp_json.get("PlaySessionId", "")
+                
+                media_sources = resp_json.get("MediaSources", [])
                 if media_sources and len(media_sources) > 0:
                     path = media_sources[0].get("Path", "")
                     audio.file_path = path
                     if path:
                         c = os.path.splitext(path)[1].replace(".", "")
+                    # 提取 MediaSourceId
+                    audio.media_source_id = media_sources[0].get("Id", "")
             except Exception as e:
                 self.log.error(f"设置音频容器失败: {e}")
                 pass
@@ -330,7 +365,8 @@ class EmbyUtil:
                               album_artist=item.get("AlbumArtist", ""),
                               artist_items=item.get("ArtistItems", []),
                               album_artists=item.get("AlbumArtists", []),
-                              is_favorite=is_favorite)
+                              is_favorite=is_favorite,
+                              user_id=current_user_id)
                 audio_list.append(audio)
 
             # 播放专辑的话根据索引排序
@@ -429,6 +465,116 @@ class EmbyUtil:
         except Exception as e:
             self.log.error(f"请求 Emby API 收藏歌曲时发生异常: {e}")
             return False
+
+    def report_playback_start(self, item_id, user_id=None, media_source_id=None,
+                               play_session_id=None):
+        """
+        上报播放开始
+        
+        调用 Emby API: POST /Sessions/Playing
+        
+        Args:
+            item_id: Emby 媒体项 ID
+            user_id: Emby 用户 ID（用于关联播放记录到具体用户）
+            media_source_id: 媒体源 ID
+            play_session_id: 播放会话 ID
+        """
+        current_user_id = user_id or self.user_id
+        url = f"{self.host}/Sessions/Playing"
+        headers = self._get_auth_header()
+        payload = {
+            "ItemId": str(item_id),
+            "MediaSourceId": str(media_source_id or item_id),
+            "PlaySessionId": play_session_id or str(uuid.uuid4()),
+            "PlayMethod": "DirectStream",
+            "QueueableMediaTypes": ["Audio"],
+            "PositionTicks": 0,
+            "IsPaused": False,
+        }
+        
+        try:
+            # 使用 UserId 查询参数关联用户
+            params = {"UserId": current_user_id} if current_user_id else {}
+            response = requests.post(url, json=payload, headers=headers, params=params)
+            self.log.info(
+                f"上报播放开始: ItemId={item_id}, UserId={current_user_id}, "
+                f"PlaySessionId={payload['PlaySessionId']}, 状态码={response.status_code}"
+            )
+        except Exception as e:
+            self.log.error(f"上报播放开始失败: {e}")
+
+    def report_playback_progress(self, item_id, position_ticks, user_id=None,
+                                  media_source_id=None, play_session_id=None,
+                                  is_paused=False):
+        """
+        上报播放进度
+        
+        调用 Emby API: POST /Sessions/Playing/Progress
+        
+        Args:
+            item_id: Emby 媒体项 ID
+            position_ticks: 当前播放位置（1 tick = 100 纳秒）
+            user_id: Emby 用户 ID
+            media_source_id: 媒体源 ID
+            play_session_id: 播放会话 ID
+            is_paused: 是否暂停
+        """
+        current_user_id = user_id or self.user_id
+        url = f"{self.host}/Sessions/Playing/Progress"
+        headers = self._get_auth_header()
+        payload = {
+            "ItemId": str(item_id),
+            "MediaSourceId": str(media_source_id or item_id),
+            "PlaySessionId": play_session_id or "",
+            "PositionTicks": max(0, int(position_ticks)),
+            "IsPaused": is_paused,
+            "EventName": "TimeUpdate",
+        }
+        
+        try:
+            params = {"UserId": current_user_id} if current_user_id else {}
+            response = requests.post(url, json=payload, headers=headers, params=params)
+            self.log.debug(
+                f"上报播放进度: ItemId={item_id}, PositionTicks={position_ticks}, "
+                f"状态码={response.status_code}"
+            )
+        except Exception as e:
+            self.log.error(f"上报播放进度失败: {e}")
+
+    def report_playback_stop(self, item_id, position_ticks, user_id=None,
+                              media_source_id=None, play_session_id=None):
+        """
+        上报播放停止
+        
+        调用 Emby API: POST /Sessions/Playing/Stopped
+        
+        Args:
+            item_id: Emby 媒体项 ID
+            position_ticks: 最终播放位置（1 tick = 100 纳秒）
+            user_id: Emby 用户 ID
+            media_source_id: 媒体源 ID
+            play_session_id: 播放会话 ID
+        """
+        current_user_id = user_id or self.user_id
+        url = f"{self.host}/Sessions/Playing/Stopped"
+        headers = self._get_auth_header()
+        payload = {
+            "ItemId": str(item_id),
+            "MediaSourceId": str(media_source_id or item_id),
+            "PlaySessionId": play_session_id or "",
+            "PositionTicks": max(0, int(position_ticks)),
+        }
+        
+        try:
+            params = {"UserId": current_user_id} if current_user_id else {}
+            response = requests.post(url, json=payload, headers=headers, params=params)
+            self.log.info(
+                f"上报播放停止: ItemId={item_id}, UserId={current_user_id}, "
+                f"PositionTicks={position_ticks}, 状态码={response.status_code}"
+            )
+        except Exception as e:
+            self.log.error(f"上报播放停止失败: {e}")
+
 
 if __name__ == '__main__':
     import logging

@@ -81,7 +81,8 @@ class XiaoMusic:
                 host=self.config.emby_host,
                 user_id=self.config.emby_user_id,
                 api_key=self.config.emby_api_key,
-                log=self.log
+                log=self.log,
+                version=__version__
             )
             self.log.info("EmbyUtil initialized successfully")
         except Exception as e:

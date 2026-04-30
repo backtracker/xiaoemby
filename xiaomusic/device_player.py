@@ -71,6 +71,13 @@ class XiaoMusicDevice:
         # TTS 播放定时器
         self._tts_timer = None
 
+        # Emby 播放上报相关
+        self._current_emby_user_id = None  # 当前播放关联的 Emby 用户 ID
+        self._current_audio_id = None       # 当前播放的 Emby 媒体 ID
+        self._current_play_session_id = None # 当前的播放会话 ID
+        self._current_media_source_id = None # 当前的媒体源 ID
+        self._progress_timer = None          # 进度上报定时器
+
     @property
     def did(self):
         """获取设备DID"""
@@ -290,7 +297,23 @@ class XiaoMusicDevice:
                 self.log.info(f"存储的不是Audio对象，而是: {music}")
         else:
             self.log.info(f"未找到歌曲 {name} 的Audio对象")
-        
+
+        # Emby 播放上报：上报播放开始
+        if music and hasattr(music, 'id') and self.xiaomusic.emby_util:
+            # 先停止上一首歌的上报（如果有）
+            await self._report_stop_current()
+            
+            # 更新播放会话上下文
+            self._current_audio_id = music.id
+            self._current_emby_user_id = getattr(music, 'user_id', '') or self._get_default_user_id()
+            self._current_play_session_id = getattr(music, 'play_session_id', '')
+            self._current_media_source_id = getattr(music, 'media_source_id', '')
+            
+            # 上报播放开始
+            await self._report_playback_start()
+            # 启动进度上报定时器
+            await self._start_progress_reporter()
+
         sec = await self.xiaomusic.music_library.get_music_duration(name)
         # 存储真实歌曲时长
         self._duration = sec
@@ -711,6 +734,8 @@ class XiaoMusicDevice:
         """停止播放"""
         self._last_cmd = "stop"
         self.is_playing = False
+        # 上报 Emby 播放停止
+        await self._report_stop_current()
         if arg1 != "notts":
             await self.do_tts(self.config.stop_tts_msg)
             await asyncio.sleep(3)  # 等它说完
@@ -790,6 +815,11 @@ class XiaoMusicDevice:
             self._tts_timer = None
             self.log.info("cancel_all_timer _tts_timer.cancel")
 
+        if self._progress_timer:
+            self._progress_timer.cancel()
+            self._progress_timer = None
+            self.log.info("cancel_all_timer _progress_timer.cancel")
+
     @classmethod
     def dict_clear(cls, d):
         """清空设备字典并取消所有定时器"""
@@ -817,3 +847,97 @@ class XiaoMusicDevice:
         if name in music_list.get("所有歌曲", []):
             return "所有歌曲"
         return "全部"
+
+    # ==================== Emby 播放上报方法 ====================
+
+    async def _report_playback_start(self):
+        """上报 Emby 播放开始"""
+        if not self._current_audio_id or not self.xiaomusic.emby_util:
+            return
+        try:
+            await asyncio.to_thread(
+                self.xiaomusic.emby_util.report_playback_start,
+                item_id=self._current_audio_id,
+                user_id=self._current_emby_user_id,
+                media_source_id=self._current_media_source_id,
+                play_session_id=self._current_play_session_id,
+            )
+        except Exception as e:
+            self.log.error(f"上报播放开始失败: {e}")
+
+    async def _start_progress_reporter(self):
+        """启动每 10 秒的进度上报定时器"""
+        await self._stop_progress_reporter()
+
+        async def _do_progress():
+            while True:
+                await asyncio.sleep(10)
+                if not self.is_playing or not self._current_audio_id:
+                    break
+                if not self.xiaomusic.emby_util:
+                    break
+                # 计算当前播放位置（秒 → ticks，1秒 = 10,000,000 ticks）
+                position_secs = time.time() - self._start_time - self._paused_time
+                position_ticks = int(position_secs * 10_000_000)
+                try:
+                    await asyncio.to_thread(
+                        self.xiaomusic.emby_util.report_playback_progress,
+                        item_id=self._current_audio_id,
+                        position_ticks=position_ticks,
+                        user_id=self._current_emby_user_id,
+                        media_source_id=self._current_media_source_id,
+                        play_session_id=self._current_play_session_id,
+                    )
+                except Exception as e:
+                    self.log.error(f"上报播放进度失败: {e}")
+
+        self._progress_timer = asyncio.create_task(_do_progress())
+        self.log.info("Emby 进度上报定时器已启动")
+
+    async def _stop_progress_reporter(self):
+        """停止进度上报定时器"""
+        if self._progress_timer:
+            self._progress_timer.cancel()
+            try:
+                await self._progress_timer
+            except asyncio.CancelledError:
+                pass
+            self._progress_timer = None
+            self.log.info("Emby 进度上报定时器已停止")
+
+    async def _report_stop_current(self):
+        """停止当前歌曲的 Emby 上报（切歌或停止时调用）"""
+        # 先停止进度定时器
+        await self._stop_progress_reporter()
+        
+        if not self._current_audio_id or not self.xiaomusic.emby_util:
+            return
+        
+        # 计算最终播放位置
+        position_secs = time.time() - self._start_time - self._paused_time
+        position_ticks = int(position_secs * 10_000_000)
+        
+        try:
+            await asyncio.to_thread(
+                self.xiaomusic.emby_util.report_playback_stop,
+                item_id=self._current_audio_id,
+                position_ticks=position_ticks,
+                user_id=self._current_emby_user_id,
+                media_source_id=self._current_media_source_id,
+                play_session_id=self._current_play_session_id,
+            )
+        except Exception as e:
+            self.log.error(f"上报播放停止失败: {e}")
+        
+        # 清除播放上下文
+        self._current_audio_id = None
+        self._current_emby_user_id = None
+        self._current_play_session_id = None
+        self._current_media_source_id = None
+
+    def _get_default_user_id(self):
+        """获取默认 Emby 用户 ID"""
+        default_user = self.config.get_default_emby_user()
+        if default_user:
+            return default_user.user_id
+        return self.config.emby_user_id
