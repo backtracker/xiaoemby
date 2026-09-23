@@ -42,16 +42,16 @@ async def proxy_emby_audio(audio_id: str, container: str):
             "api_key": xiaomusic.config.emby_api_key
         }
         
-        # 构建原始URL
-        original_url = f"{emby_config['host']}/emby/Audio/{audio_id}/stream?Container={container}&api_key={emby_config['api_key']}"
+        # 构建原始URL（加 Static=true 让 Emby 直出原文件，避免 remux 产生非 faststart 临时文件）
+        original_url = f"{emby_config['host']}/emby/Audio/{audio_id}/stream?Container={container}&api_key={emby_config['api_key']}&Static=true"
         
         # 转发请求到Emby服务器
         import requests
         response = requests.get(original_url, stream=True)
         
-        # 构造响应头
+        # 透传 Emby 的响应头，避免硬编码错误的 Content-Type（如 m4a 应为 audio/mp4 而非 audio/m4a）
         headers = {
-            "Content-Type": f"audio/{container}",
+            "Content-Type": response.headers.get("Content-Type", f"audio/{container}"),
             "Accept-Ranges": response.headers.get("Accept-Ranges", "bytes"),
         }
         

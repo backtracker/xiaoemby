@@ -2,6 +2,12 @@
 
 所有重要的版本更新都会记录在此。
 
+## [v0.0.15] - 2026-09-23
+
+### Fixed
+- 修复 m4a/AAC 格式音乐播放无声问题：Emby 音频代理加 `Static=true` 直出原文件，避免 Emby remux 产生非 faststart 临时文件导致音箱无法解码
+- 修复代理响应 Content-Type 硬编码错误（m4a 返回 `audio/m4a` 应为 `audio/mp4`），改为透传 Emby 的响应头
+
 ## [v0.0.14] - 2026-04-30
 
 ### Added
