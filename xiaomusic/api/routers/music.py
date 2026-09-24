@@ -7,6 +7,7 @@ from fastapi.responses import RedirectResponse
 
 from xiaomusic.api.dependencies import log, xiaomusic
 from xiaomusic.api.models import DidPlayMusic
+from xiaomusic.utils.stream_utils import build_emby_stream_url
 
 router = APIRouter()
 
@@ -36,34 +37,38 @@ async def device_push_url(request: Request):
 async def proxy_emby_audio(audio_id: str, container: str):
     """代理Emby音频流，提供简单格式的播放地址"""
     try:
-        # 构建原始Emby音频流URL
-        emby_config = {
-            "host": xiaomusic.config.emby_host,
-            "api_key": xiaomusic.config.emby_api_key
-        }
-        
-        # 构建原始URL（加 Static=true 让 Emby 直出原文件，避免 remux 产生非 faststart 临时文件）
-        original_url = f"{emby_config['host']}/emby/Audio/{audio_id}/stream?Container={container}&api_key={emby_config['api_key']}&Static=true"
-        
+        original_url = build_emby_stream_url(
+            xiaomusic.config.emby_host,
+            xiaomusic.config.emby_api_key,
+            audio_id,
+            container,
+        )
+
         # 转发请求到Emby服务器
         import requests
         response = requests.get(original_url, stream=True)
-        
+
         # 透传 Emby 的响应头，避免硬编码错误的 Content-Type（如 m4a 应为 audio/mp4 而非 audio/m4a）
         headers = {
             "Content-Type": response.headers.get("Content-Type", f"audio/{container}"),
             "Accept-Ranges": response.headers.get("Accept-Ranges", "bytes"),
         }
-        
+
         # 只在 Emby 服务器返回了有效的 Content-Length 头时才设置它
         content_length = response.headers.get("Content-Length")
         if content_length and content_length.isdigit():
             headers["Content-Length"] = content_length
-        
-        
+
+        def iter_audio():
+            try:
+                yield from response.iter_content(chunk_size=1024 * 1024)
+            finally:
+                # 客户端（音箱）提前断开时及时关闭到 Emby 的连接，避免连接长时间挂起
+                response.close()
+
         # 返回流媒体响应
         from fastapi.responses import StreamingResponse
-        return StreamingResponse(response.iter_content(chunk_size=1024*1024), headers=headers)
+        return StreamingResponse(iter_audio(), headers=headers)
     except Exception as e:
         log.error(f"代理Emby音频失败: {e}")
         raise HTTPException(status_code=500, detail=f"代理音频失败: {e}")
