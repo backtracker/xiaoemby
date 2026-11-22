@@ -1,72 +1,3 @@
-// 获取二维码的函数（点击「获取二维码」后再请求并显示）
-let qrcodeCountdownTimer = null;
-const DEFAULT_QRCODE_EXPIRE_SECONDS = 120;
-
-function stopQRCodeCountdown() {
-  if (qrcodeCountdownTimer) {
-    clearInterval(qrcodeCountdownTimer);
-    qrcodeCountdownTimer = null;
-  }
-}
-
-function startQRCodeCountdown($qrcodeStatus, $qrcodeImage, expireSeconds) {
-  stopQRCodeCountdown();
-
-  let remainSeconds = Number(expireSeconds);
-  if (!Number.isFinite(remainSeconds) || remainSeconds <= 0) {
-    remainSeconds = DEFAULT_QRCODE_EXPIRE_SECONDS;
-  }
-  remainSeconds = Math.floor(remainSeconds);
-
-  const updateCountdownText = function () {
-    if (remainSeconds <= 0) {
-      stopQRCodeCountdown();
-      $qrcodeImage.addClass("qrcode-image-hidden");
-      $qrcodeStatus.text("二维码已过期，请点击“刷新二维码”重新获取");
-      return;
-    }
-    $qrcodeStatus.text(
-      "请使用米家App扫码登录，二维码将在 " + remainSeconds + " 秒后过期"
-    );
-    remainSeconds -= 1;
-  };
-
-  updateCountdownText();
-  qrcodeCountdownTimer = setInterval(updateCountdownText, 1000);
-}
-
-function fetchQRCode() {
-  var $qrcodeImage = $("#qrcode-image");
-  var $qrcodeStatus = $("#qrcode-status");
-  var $refreshBtn = $("#refresh-qrcode");
-
-  if (!$qrcodeImage.length || !$qrcodeStatus.length) return;
-  stopQRCodeCountdown();
-
-  $qrcodeImage.attr("src", "");
-  $qrcodeStatus.text("正在生成二维码...");
-  $refreshBtn.text("刷新二维码");
-
-  $.get("/xiaoemby/get_qrcode")
-    .done(function (data) {
-      if (data.success) {
-        if (data.already_logged_in) {
-          $qrcodeStatus.text(data.message || "已登录，无需更新");
-          $qrcodeImage.addClass("qrcode-image-hidden");
-        } else {
-          $qrcodeImage.attr("src", data.qrcode_url || "").removeClass("qrcode-image-hidden");
-          startQRCodeCountdown($qrcodeStatus, $qrcodeImage, data.expire_seconds);
-        }
-      } else {
-        $qrcodeStatus.text(data.message || "二维码生成失败，请稍后重试");
-      }
-    })
-    .fail(function (xhr) {
-      console.error("获取二维码失败:", xhr);
-      $qrcodeStatus.text("网络错误，请检查连接");
-    });
-}
-
 // ============ 字体加载检测 ============
 // 检测字体加载完成，避免图标文字闪烁
 (function () {
@@ -93,10 +24,6 @@ function fetchQRCode() {
 })();
 
 $(function () {
-  $("#refresh-qrcode").on("click", fetchQRCode);
-
-
-
   // 遍历所有的select元素，默认选中只有1个选项的
   const autoSelectOne = () => {
     $("select").each(function () {
@@ -119,7 +46,7 @@ $(function () {
     if (device_list.length == 0) {
       const loginTips = accountPassValid
         ? `<div class="login-tips">未发现可用的小爱设备，请检查账号密码是否输错，并关闭加速代理或在<a href="https://www.mi.com">小米官网</a>登陆过人脸或滑块验证。如仍未解决。请根据<a href="https://github.com/hanxi/xiaomusic/issues/99">FAQ</a>的内容解决问题。</div>`
-        : `<div class="login-tips">未发现可用的小爱设备，请先在下面的输入框中设置小米的<b>账号、密码或者cookie</b></div>`;
+        : `<div class="login-tips">未发现可用的小爱设备，请先在下面的输入框中设置小米的<b>账号和密码</b></div>`;
       $(selector).append(loginTips);
       return;
     }
@@ -362,19 +289,6 @@ $(function () {
     }
   });
 
-  // Tab 切换功能
-  $(".auth-tab-button").on("click", function () {
-    const tabName = $(this).data("tab");
-
-    // 移除所有 active 类
-    $(".auth-tab-button").removeClass("active");
-    $(".auth-tab-content").removeClass("active");
-
-    // 添加当前 active 类
-    $(this).addClass("active");
-    $("#tab-" + tabName).addClass("active");
-  });
-
   // 高级配置 Tab 切换：委托到高级配置容器，阻止冒泡并强制切换面板
   $("#advancedConfigContent").on("click", ".config-tab-button", function (e) {
     e.preventDefault();
@@ -457,65 +371,6 @@ $(function () {
   });
 
   // ============ 无障碍功能 ============
-
-  // Tab 切换功能增强
-  const tabButtons = $(".auth-tab-button");
-  const tabPanels = $(".auth-tab-content");
-
-  // Tab 切换函数
-  function switchTab(index) {
-    // 更新按钮状态
-    tabButtons.removeClass("active").attr("aria-selected", "false");
-    $(tabButtons[index]).addClass("active").attr("aria-selected", "true");
-
-    // 更新面板显示
-    tabPanels.removeClass("active");
-    $(tabPanels[index]).addClass("active");
-
-    // 移动焦点到激活的 Tab
-    tabButtons[index].focus();
-  }
-
-  // Tab 按钮点击事件
-  tabButtons.on("click", function () {
-    const index = tabButtons.index(this);
-    switchTab(index);
-  });
-
-  // Tab 键盘导航
-  tabButtons.on("keydown", function (e) {
-    const currentIndex = tabButtons.index(this);
-    let newIndex = currentIndex;
-
-    switch (e.key) {
-      case "ArrowLeft":
-        // 左箭头 - 前一个 Tab
-        newIndex = currentIndex > 0 ? currentIndex - 1 : tabButtons.length - 1;
-        e.preventDefault();
-        break;
-      case "ArrowRight":
-        // 右箭头 - 下一个 Tab
-        newIndex = currentIndex < tabButtons.length - 1 ? currentIndex + 1 : 0;
-        e.preventDefault();
-        break;
-      case "Home":
-        // Home 键 - 第一个 Tab
-        newIndex = 0;
-        e.preventDefault();
-        break;
-      case "End":
-        // End 键 - 最后一个 Tab
-        newIndex = tabButtons.length - 1;
-        e.preventDefault();
-        break;
-      default:
-        return;
-    }
-
-    if (newIndex !== currentIndex) {
-      switchTab(newIndex);
-    }
-  });
 
   // 高级配置折叠按钮的 ARIA 更新
   function updateAdvancedConfigAria() {

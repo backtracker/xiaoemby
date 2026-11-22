@@ -2,7 +2,6 @@
 
 本模块负责小米账号认证与会话管理，包括：
 - 小米账号登录
-- Cookie管理
 - 会话维护
 - 设备ID更新
 """
@@ -13,7 +12,7 @@ from aiohttp import ClientSession
 from miservice import MiAccount, MiIOService, MiNAService
 from xiaomusic.config import Device
 from xiaomusic.const import COOKIE_TEMPLATE
-from xiaomusic.utils.system_utils import get_random, parse_cookie_string, parse_cookie_string_to_dict
+from xiaomusic.utils.system_utils import get_random, parse_cookie_string
 
 
 class AuthManager:
@@ -49,7 +48,7 @@ class AuthManager:
     async def init_all_data(self):
         """初始化所有数据
 
-        检查登录状态，如需要则登录，然后更新设备ID和Cookie。
+        检查登录状态，如需要则登录，然后更新设备ID和会话Cookie。
 
         """
         self.mi_token_home = os.path.join(self.config.conf_path, ".mi.token")
@@ -71,11 +70,7 @@ class AuthManager:
     async def can_login(self):
         if self.config.account and self.config.password:
             return True
-        if self.get_cookie():
-            return True
-        if os.path.isfile(os.path.join(self.config.conf_path, "auth.json")):
-            return True
-        self.log.warning("没有账号密码 或 cookies 无法登陆")
+        self.log.warning("没有账号密码无法登陆")
         return False
 
     async def need_login(self):
@@ -110,8 +105,6 @@ class AuthManager:
                 self.config.password,
                 str(self.mi_token_home),
             )
-            # Forced login to refresh to refresh token
-            self.set_token(mi_account)
             await mi_account.login("micoapi")
             self.mina_service = MiNAService(mi_account)
             self.miio_service = MiIOService(mi_account)
@@ -158,41 +151,14 @@ class AuthManager:
             self.log.warning(f"可能登录失败. {e}")
             return {}
 
-    def set_token(self, account):
-        """
-        设置token到account
-        """
-        auth_path = os.path.join(self.config.conf_path, "auth.json")
-        if os.path.isfile(auth_path):
-            with open(auth_path, encoding="utf-8") as f:
-                user_data = json.loads(f.read())
-                self.device_id = user_data["deviceId"]
-                account.token = {
-                    "passToken": user_data["passToken"],
-                    "userId": user_data["userId"],
-                    "deviceId": self.device_id,
-                }
-        elif self.config.cookie:
-            cookies_dict = parse_cookie_string_to_dict(self.config.cookie)
-            account.token = {
-                "passToken": cookies_dict["passToken"],
-                "userId": cookies_dict["userId"],
-                "deviceId": self.device_id,
-            }
-        else:
-            return
     def get_cookie(self):
-        """获取Cookie
+        """获取会话Cookie
 
-        从配置或token文件中获取Cookie。
+        从登录token文件中生成会话Cookie。
 
         Returns:
             CookieJar: Cookie容器，失败返回None
         """
-        if self.config.cookie:
-            cookie_jar = parse_cookie_string(self.config.cookie)
-            return cookie_jar
-
         if not os.path.exists(self.mi_token_home):
             self.log.warning(f"{self.mi_token_home} file not exist")
             return None
