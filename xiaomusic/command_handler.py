@@ -151,8 +151,16 @@ class CommandHandler:
             if match:
                 # 检查是否在激活命令中
                 active_cmd_arr = self.config.get_active_cmd_arr()
-                # 管理命令不受激活命令列表限制
-                management_commands = ['set_pull_ask_off']
+                # 管理命令不受激活命令列表限制：设备空闲时也允许触发。
+                # 今日推荐相关命令是系统级操作（生成/换批/屏蔽歌曲），
+                # 放进这里可避免旧版 setting.json 的 active_cmd 白名单缺少它们时
+                # 被降级成普通播放命令。
+                management_commands = [
+                    'set_pull_ask_off',
+                    'daily_recommend',
+                    'daily_recommend_renew',
+                    'snooze_current',
+                ]
                 if (
                     not ctrl_panel
                     and not device.is_playing
