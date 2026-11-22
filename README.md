@@ -16,6 +16,9 @@
 
 ### 安装环境
 
+- **Python 3.12 或更高版本**（项目要求 `>=3.12`，Docker 镜像基于 Python 3.12）
+- [PDM](https://pdm-project.org/) 作为包管理器
+
 ```shell
 pdm install
 ```
@@ -49,15 +52,6 @@ sudo docker run -d --name xiaoemby -p 8090:8090 \
 
 - **重要**: 本项目一定不要暴露在外网，以确保数据安全！
 - 项目已删除原xiaomusic中的认证相关功能，因此需特别注意网络安全。
-
-### Docker 镜像 CI
-
-推送到 `master`/`main` 或打 tag 时，GitHub Actions 会自动构建镜像并推送到 `ghcr.io/backtracker/xiaoemby`。
-
-需要登录 GHCR 的写权限，二选一：
-
-1. 仓库 **Settings → Actions → General → Workflow permissions** 选 **Read and write permissions**（用内置 `GITHUB_TOKEN`）。
-2. 若上述设置不可见，创建一个 **Personal Access Token**（勾选 `write:packages`、`repo`），在仓库 **Settings → Secrets and variables → Actions** 里新建 secret `GHCR_TOKEN`，workflow 会优先用它登录。
 
 ### NAS地址配置
 
@@ -276,7 +270,15 @@ location /xiaoemby/proxy/emby/audio/ {
 由于本人手头只有L17A设备，无法测试其他设备的兼容性。此外，本人的媒体库主要以FLAC格式为主，而本项目不提供音频转码功能。如果其他设备不支持FLAC格式的直接播放，可能会出现无法播放的情况。
 
 ### 是否支持Docker？
-作为个人项目，暂未提供预构建的Docker镜像。您可以自行根据项目根目录的 `Dockerfile` 构建镜像，然后使用 `docker-compose.yml` 启动服务。
+~~作为个人项目，暂未提供预构建的Docker镜像。您可以自行根据项目根目录的 `Dockerfile` 构建镜像，然后使用 `docker-compose.yml` 启动服务。~~
+
+**已支持**。GitHub Actions 会自动构建 Docker 镜像并推送到 GHCR，可直接拉取使用：
+
+```shell
+sudo docker pull ghcr.io/backtracker/xiaoemby:latest
+```
+
+运行方式见上方「Docker 运行」章节（挂载 `conf` 目录即可）。也可自行根据根目录的 `Dockerfile` 构建，或用 `docker-compose.yml` 启动。
 
 ### 为什么会对Emby流媒体地址进行代理？
 因为小爱音箱无法直接播放Emby流媒体API的地址，所以需要通过本程序对Emby的流媒体地址进行代理转发后，才能在小爱音箱上正常播放。
