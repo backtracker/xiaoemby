@@ -10,6 +10,7 @@
 - 移除本地文件和网络歌曲相关功能
 - 保留小爱音箱语音控制功能
 - 简化配置，专注于核心播放体验
+- **今日推荐**：接入 OpenAI-compatible LLM，按「熟悉开场 → 探索中段 → 平缓收尾」的分段节目单生成每日歌单，并语音播报每段串联语（详见下方说明）
 
 ## 安装与运行
 
@@ -26,6 +27,21 @@ pdm start
 ```
 
 默认监听端口 8090，使用其他端口请自行修改。
+
+### Docker 运行
+
+使用 GitHub Actions 自动构建的镜像（推送到 master / tag 时构建）：
+
+```shell
+sudo docker pull ghcr.io/backtracker/xiaoemby:latest
+sudo docker run -d --name xiaoemby -p 8090:8090 \
+  -v $(pwd)/conf:/app/conf \
+  -e TZ=Asia/Shanghai \
+  --restart unless-stopped \
+  ghcr.io/backtracker/xiaoemby:latest
+```
+
+配置文件放在挂载的 `conf/` 目录里（首次运行可放入 `setting.json` 和 `replace.json`）。镜像需 Python 3.12+。
 
 ## 配置说明
 
@@ -50,15 +66,23 @@ pdm start
 
 ### 今日推荐（AI）配置
 
-在设置页「AI推荐」标签中配置任意 OpenAI-compatible 的 LLM 服务：
+在设置页「AI推荐」标签（或 `conf/setting.json`）中配置任意 OpenAI-compatible 的 LLM 服务：
 
-- `enable_daily_recommend` 设为 `true`
-- `llm_endpoint`：API 地址（如 `http://127.0.0.1:8080/v1`）
+- `enable_daily_recommend`：设为 `true` 开启
+- `llm_endpoint`：API 地址（如 `https://api.deepseek.com`）
 - `llm_api_key`：API Key
-- `llm_model`：模型名称
+- `llm_model`：模型名称（如 `deepseek-chat`）
 - `daily_recommend_count`：推荐歌曲数量（默认 20）
+- `llm_supports_schema`：LLM 是否支持 `response_format=json_schema`；DeepSeek 等不支持的填 `false`（默认），直接用 `json_object` 模式
+- `explore_ratio`：探索曲目比例（默认 0.15，即 20 首里留约 3 首"没听过"的歌）
 
-LLM 只负责编排当天的音乐意图与特征组合，**不会输出具体歌曲**；实际选曲、去重、歌单生成全部在本地完成。未配置或生成失败时会静默回退为本地每日混歌。同一天的推荐结果保持不变。
+**工作原理**：LLM 只看库的聚合特征（流派/年代/歌手分布、最近播放口味、最近推荐记录），输出一份**分段节目单**（主题、串联语、各段特征组合），**绝不输出具体歌曲**。本地引擎再按段从 Emby 曲库筛歌、去重、落库。因此有三层保障：
+
+- **红线**：LLM 不碰单曲 id/标题/路径，杜绝幻觉。
+- **新鲜度**：口味画像按时间窗口（最近 45 天的播放记录）自适应，7 天半衰期加权；最近推荐过的曲目/歌手/流派会被降权；探索配额引入没听过的歌。
+- **丰富度**：候选池按库大小自适应（约 3%），按流派分层采样；MMR 重排 + 每歌手/专辑/流派配额，保证一段歌单内部不扎堆。
+
+生成的歌单是一份有起承转合的「节目」：熟悉开场 → 探索中段 → 平缓收尾，TTS 会播报总起和每段的串联语。同一天的推荐结果冻结不变（可用「换一批」重新生成，最多 3 次）；未配置或生成失败时静默回退为本地每日混歌。
 
 ## 使用说明
 
