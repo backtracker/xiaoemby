@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.coverage
+cache/
+temp/
+*.log
+conf/setting.json
+docs/
+tests/
+*.md
+!README.md

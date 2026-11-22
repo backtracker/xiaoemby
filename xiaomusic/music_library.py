@@ -92,7 +92,25 @@ class MusicLibrary:
 
         # 刷新自定义歌单
         self.refresh_custom_play_list()
+        # 重启后恢复今日推荐曲目，避免歌单里的歌不在 all_music 导致播放失败
+        self._restore_daily_recommend_tracks()
 
+    def _restore_daily_recommend_tracks(self):
+        """从缓存按 id 把今日推荐曲目拉回 all_music（重启后可播放）。"""
+        if not self.emby_util:
+            return
+        try:
+            cache_path = os.path.join(self.config.cache_dir, "daily_recommend.json")
+            with open(cache_path, encoding="utf-8") as handle:
+                cache = json.load(handle)
+            ids = cache.get("track_ids") or []
+            if not ids:
+                return
+            for audio in self.emby_util.fetch_tracks_by_ids(ids):
+                key = f"{audio.name} - {audio.album} - {audio.album_artist}"
+                self.all_music[key] = audio
+        except Exception as e:
+            self.log.debug(f"恢复今日推荐曲目失败: {e}")
 
     def refresh_custom_play_list(self):
         """刷新自定义歌单"""

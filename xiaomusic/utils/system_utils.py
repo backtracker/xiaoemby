@@ -96,6 +96,7 @@ def deepcopy_data_no_sensitive_info(data, fields_to_anonymize: list = None):
         fields_to_anonymize = [
             "account",
             "password",
+            "llm_api_key",
         ]
 
     copy_data = copy.deepcopy(data)

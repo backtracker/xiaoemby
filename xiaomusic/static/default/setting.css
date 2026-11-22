@@ -409,128 +409,6 @@ button.mini-button {
   opacity: 0;
 }
 
-/* Tab 切换组件样式 - 现代卡片式设计 */
-.auth-tabs {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 24px;
-  padding: 4px;
-  background-color: #f8f9fa;
-  border-radius: 12px;
-  position: relative;
-}
-
-.auth-tab-button {
-  flex: 1;
-  background: transparent !important;
-  border: none !important;
-  padding: 14px 20px !important;
-  font-size: 14px !important;
-  font-weight: 500 !important;
-  color: #6c757d !important;
-  cursor: pointer;
-  position: relative;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  border-radius: 10px !important;
-  z-index: 1;
-  display: flex !important;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  transform: none !important;
-}
-
-.auth-tab-button::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: white;
-  border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  opacity: 0;
-  transform: scale(0.95);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: -1;
-}
-
-.auth-tab-button:hover {
-  color: #495057 !important;
-  background: transparent !important;
-  transform: none !important;
-}
-
-.auth-tab-button:hover::before {
-  opacity: 0.5;
-  transform: scale(0.98);
-}
-
-.auth-tab-button:active {
-  transform: none !important;
-}
-
-.auth-tab-button.active {
-  color: #007bff !important;
-  font-weight: 600 !important;
-  background: transparent !important;
-}
-
-.auth-tab-button.active::before {
-  opacity: 1;
-  transform: scale(1);
-  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
-}
-
-/* 添加图标支持 */
-.auth-tab-button .material-icons {
-  font-size: 18px !important;
-  width: 20px;
-  min-width: 20px;
-  text-align: center;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
-.auth-tab-panels {
-  position: relative;
-}
-
-.auth-tab-content {
-  display: none;
-  animation: fadeInUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.auth-tab-content.active {
-  display: block;
-}
-
-/* 二维码登录：未点击获取前不显示图片 */
-#qrcode-container .qrcode-image-hidden {
-  display: none !important;
-}
-
-#qrcode-container {
-  width: 100%;
-  max-width: 320px;
-}
-
-#qrcode-image {
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  height: auto;
-  margin: 8px 0 10px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-#qrcode-status {
-  overflow-wrap: anywhere;
-}
-
-
 @keyframes fadeInUp {
   from {
     opacity: 0;
@@ -539,46 +417,6 @@ button.mini-button {
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-/* 移动端适配 */
-@media (max-width: 640px) {
-  .auth-tabs {
-    flex-direction: column;
-    gap: 6px;
-    padding: 6px;
-  }
-
-  .auth-tab-button {
-    width: 100%;
-    display: grid !important;
-    grid-template-columns: 18px minmax(0, 1fr);
-    align-items: center;
-    justify-content: initial;
-    padding: 12px 14px !important;
-    font-size: 13px !important;
-    column-gap: 8px;
-    text-align: left;
-  }
-
-  .auth-tab-button .material-icons {
-    font-size: 17px !important;
-    width: 18px;
-    min-width: 18px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-  }
-
-  .auth-tab-button > span:last-child {
-    min-width: 0;
-    text-align: left;
-  }
-
-  #qrcode-container {
-    max-width: 260px;
   }
 }
 
@@ -976,37 +814,9 @@ footer a:hover {
   justify-content: center;
 }
 
-.qrcode-container {
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.qrcode {
-  max-width: 280px;
-  width: auto;
-  height: auto;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition:
-    transform 0.3s ease,
-    box-shadow 0.3s ease;
-}
-
-.qrcode:hover {
-  transform: scale(1.02);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
 @media (max-width: 640px) {
   .community-buttons-grid {
     grid-template-columns: repeat(2, 1fr);
-  }
-
-  .qrcode {
-    max-width: 240px;
   }
 }
 

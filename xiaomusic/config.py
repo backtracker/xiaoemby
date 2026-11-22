@@ -27,6 +27,10 @@ command_action_dict = {
 
     r"^(?:播(?:放)?)?下一首$": "play_next",
     r"^(?:播(?:放)?)?上一首$": "play_prev",
+    # 今日推荐（必须放在终极兜底匹配之前，否则会被当成普通歌名）
+    r"^(?:播(?:放)?|来点)(?:今日|今天的)推荐(?:歌曲|音乐|歌单|的歌)?$": "daily_recommend",
+    r"^(?:换(?:一批|一拨)|再来一批)(?:今日|今天的)?推荐(?:歌单|歌曲|音乐)?$": "daily_recommend_renew",
+    r"^(?:不喜欢|不想要)(?:这首|这)?(?:歌|歌曲|音乐)?$": "snooze_current",
     r"^(?:播(?:放)?|来点)(?:音乐|歌曲|歌)$": "play",
     r"^播(?:放)?列表第(?P<index>\d+|[零一二三四五六七八九十百千万亿]+)首(?:歌(?:曲)?|音乐)?$": "play_music_list_index",
 
@@ -103,7 +107,6 @@ class Config:
     account: str = os.getenv("MI_USER", "")
     password: str = os.getenv("MI_PASS", "")
     mi_did: str = os.getenv("MI_DID", "")  # 逗号分割支持多设备
-    cookie: str = ""
     verbose: bool = os.getenv("XIAOMUSIC_VERBOSE", "").lower() == "true"
     temp_path: str = os.getenv("XIAOMUSIC_TEMP_PATH", "temp")
     conf_path: str = os.getenv("XIAOMUSIC_CONF_PATH", "conf")
@@ -121,7 +124,7 @@ class Config:
 
     active_cmd: str = os.getenv(
         "XIAOMUSIC_ACTIVE_CMD",
-        "play,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,gen_music_list,set_pull_ask_off,add_to_favorites,del_from_favorites,online_play,singer_play",
+        "play,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,gen_music_list,set_pull_ask_off,add_to_favorites,del_from_favorites,online_play,singer_play,daily_recommend,daily_recommend_renew,snooze_current",
     )
     custom_play_list_json: str = os.getenv("XIAOMUSIC_CUSTOM_PLAY_LIST_JSON", "")
 
@@ -183,9 +186,25 @@ class Config:
     enable_auto_clean_temp: bool = (
         os.getenv("XIAOMUSIC_ENABLE_AUTO_CLEAN_TEMP", "true").lower() == "true"
     )
-    qrcode_timeout: int = os.getenv("QRCODE_TIMEOUT", 120)
     # 时区配置，用于定时任务等时间相关功能
     timezone: str = os.getenv("XIAOMUSIC_TIMEZONE", "Asia/Shanghai")
+
+    # ===== 今日推荐（LLM 编排 + 本地选曲）=====
+    enable_daily_recommend: bool = (
+        os.getenv("XIAOMUSIC_ENABLE_DAILY_RECOMMEND", "false").lower() == "true"
+    )
+    llm_endpoint: str = os.getenv("XIAOMUSIC_LLM_ENDPOINT", "")
+    llm_api_key: str = os.getenv("XIAOMUSIC_LLM_API_KEY", "")
+    llm_model: str = os.getenv("XIAOMUSIC_LLM_MODEL", "")
+    daily_recommend_count: int = int(
+        os.getenv("XIAOMUSIC_DAILY_RECOMMEND_COUNT", "20")
+    )
+    # LLM 是否支持 response_format=json_schema（DeepSeek 等不支持，默认 false 直接用 json_object）
+    llm_supports_schema: bool = (
+        os.getenv("XIAOMUSIC_LLM_SUPPORTS_SCHEMA", "false").lower() == "true"
+    )
+    # 探索配额比例（discover 意图下留多少比例的「没听过」曲目）
+    explore_ratio: float = float(os.getenv("XIAOMUSIC_EXPLORE_RATIO", "0.15"))
 
     def append_keyword(self, keys, action):
         for key in keys.split(","):

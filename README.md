@@ -34,10 +34,31 @@ pdm start
 - **重要**: 本项目一定不要暴露在外网，以确保数据安全！
 - 项目已删除原xiaomusic中的认证相关功能，因此需特别注意网络安全。
 
+### Docker 镜像 CI
+
+推送到 `master`/`main` 或打 tag 时，GitHub Actions 会自动构建镜像并推送到 `ghcr.io/backtracker/xiaoemby`。
+
+需要登录 GHCR 的写权限，二选一：
+
+1. 仓库 **Settings → Actions → General → Workflow permissions** 选 **Read and write permissions**（用内置 `GITHUB_TOKEN`）。
+2. 若上述设置不可见，创建一个 **Personal Access Token**（勾选 `write:packages`、`repo`），在仓库 **Settings → Secrets and variables → Actions** 里新建 secret `GHCR_TOKEN`，workflow 会优先用它登录。
+
 ### NAS地址配置
 
 - 默认填写本地的NAS地址和端口号即可
 - Emby的流媒体地址会通过配置的NAS地址由本程序代理转发
+
+### 今日推荐（AI）配置
+
+在设置页「AI推荐」标签中配置任意 OpenAI-compatible 的 LLM 服务：
+
+- `enable_daily_recommend` 设为 `true`
+- `llm_endpoint`：API 地址（如 `http://127.0.0.1:8080/v1`）
+- `llm_api_key`：API Key
+- `llm_model`：模型名称
+- `daily_recommend_count`：推荐歌曲数量（默认 20）
+
+LLM 只负责编排当天的音乐意图与特征组合，**不会输出具体歌曲**；实际选曲、去重、歌单生成全部在本地完成。未配置或生成失败时会静默回退为本地每日混歌。同一天的推荐结果保持不变。
 
 ## 使用说明
 
@@ -46,6 +67,9 @@ pdm start
 #### 基础播放控制
 
 - **播放音乐** / **来点音乐**  - 随机播放音乐
+- **播放今日推荐** / **来点今日推荐** - 用 LLM 编排当天歌单并播放，同时语音播报推荐理由（需先在设置页「AI推荐」启用并配置 LLM）
+- **换一批今日推荐** / **再来一批推荐** - 当天重新生成（最多 3 次），新歌单会避开已推过的曲目/歌手/流派
+- **不喜欢这首歌** - 把当前歌曲加入 30 天屏蔽名单，之后不再推荐
 - **播放下一首** / **下一首** - 播放下一首歌曲
 - **播放上一首** / **上一首** - 播放上一首歌曲
 

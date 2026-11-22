@@ -4,6 +4,15 @@ from xiaomusic.config import command_action_dict
 
 # 测试数据：(测试文本, 期望动作, 期望匹配字段)
 test_data = [
+    # 今日推荐
+    ("播放今日推荐", "daily_recommend", {}),
+    ("播今日推荐", "daily_recommend", {}),
+    ("来点今日推荐", "daily_recommend", {}),
+    ("播放今日推荐歌曲", "daily_recommend", {}),
+    ("播放今天的推荐", "daily_recommend", {}),
+    ("播放今天的推荐音乐", "daily_recommend", {}),
+    ("来点今天的推荐歌单", "daily_recommend", {}),
+
     # 测试播放用户别名喜欢的歌曲（新增多用户功能）
     ("播放爸爸喜欢的歌", "play", {"user_alias": "爸爸"}),
     ("播放妈妈喜欢的歌曲", "play", {"user_alias": "妈妈"}),
@@ -169,7 +178,7 @@ test_data = [
     ("播列表第1首", "play_music_list_index", {"index": "1"}),
     # 测试播放列表第N首命令（中文数字格式）
     ("播放列表第一首歌", "play_music_list_index", {"index": "一"}),
-    ("播放列表第三首歌曲", "play_music_list_index", {"index": "三"}),j
+    ("播放列表第三首歌曲", "play_music_list_index", {"index": "三"}),
     ("播放列表第五首音乐", "play_music_list_index", {"index": "五"}),
     ("播放列表第十首歌", "play_music_list_index", {"index": "十"}),
     ("播放列表第十二首歌曲", "play_music_list_index", {"index": "十二"}),

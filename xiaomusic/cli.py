@@ -47,11 +47,6 @@ def main():
         help="xiaomi password",
     )
     parser.add_argument(
-        "--cookie",
-        dest="cookie",
-        help="xiaomi cookie",
-    )
-    parser.add_argument(
         "--verbose",
         dest="verbose",
         action="store_true",
