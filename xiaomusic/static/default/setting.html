@@ -46,66 +46,15 @@
         <div class="setting-card setting-panel">
             <h3 class="card-title">基础设置</h3>
             <div class="card-content">
-                <!-- Tab 导航 -->
-                <div class="auth-tabs" role="tablist" aria-label="登录方式选择">
-                    <button class="auth-tab-button active" data-tab="account-password" role="tab" aria-selected="true"
-                        aria-controls="tab-account-password">
-                        <span class="material-icons" aria-hidden="true">account_circle</span>
-                        <span>账号密码登录</span>
-                    </button>
-                    <button class="auth-tab-button" data-tab="cookie" role="tab" aria-selected="false"
-                        aria-controls="tab-cookie">
-                        <span class="material-icons" aria-hidden="true">cookie</span>
-                        <span>Cookie 登录</span>
-                    </button>
-                    <button class="auth-tab-button" data-tab="qrcode" role="tab" aria-selected="false"
-                        aria-controls="tab-qrcode">
-                        <span class="material-icons" aria-hidden="true">qr_code_2</span>
-                        <span>二维码登录</span>
-                    </button>
-                </div>
-
-                <!-- Tab 内容区域 -->
-                <div class="auth-tab-panels">
-                    <!-- 账号密码登录面板 -->
-                    <div class="auth-tab-content active" id="tab-account-password" role="tabpanel"
-                        aria-labelledby="account-password-tab">
-                        <div class="rows">
-                            <div class="form-item">
-                                <label for="account">*小米账号:</label>
-                                <input id="account" type="text" placeholder="填写小米登录账号" aria-required="true" />
-                            </div>
-
-                            <div class="form-item">
-                                <label for="password">*小米密码:</label>
-                                <input id="password" type="password" placeholder="填写小米登录密码" aria-required="true" />
-                            </div>
-                        </div>
+                <div class="rows">
+                    <div class="form-item">
+                        <label for="account">*小米账号:</label>
+                        <input id="account" type="text" placeholder="填写小米登录账号" aria-required="true" />
                     </div>
 
-                    <!-- Cookie 登录面板 -->
-                    <div class="auth-tab-content" id="tab-cookie" role="tabpanel" aria-labelledby="cookie-tab">
-                        <div class="rows">
-                            <div class="form-item">
-                                <label for="cookie">*Cookie:<a href="https://xdocs.hanxi.cc/issues/688.html"
-                                        target="_blank">文档</a></label>
-                                <input id="cookie" type="text" placeholder="粘贴完整的 Cookie 字符串" aria-required="true" />
-                            </div>
-                        </div>
-                    </div>
-                    <!-- 二维码登录面板 -->
-                    <div class="auth-tab-content" id="tab-qrcode" role="tabpanel" aria-labelledby="qrcode-tab">
-                        <div class="rows">
-                            <div class="form-item">
-                                <label>*扫码登录:</label>
-                                <!-- 显示二维码的容器：点击按钮后再显示 -->
-                                <div id="qrcode-container">
-                                    <img id="qrcode-image" src="" alt="二维码" class="qrcode-image-hidden" />
-                                    <p id="qrcode-status">点击下方按钮获取登录二维码</p>
-                                </div>
-                                <button id="refresh-qrcode">获取二维码</button>
-                            </div>
-                        </div>
+                    <div class="form-item">
+                        <label for="password">*小米密码:</label>
+                        <input id="password" type="password" placeholder="填写小米登录密码" aria-required="true" />
                     </div>
                 </div>
 
@@ -182,6 +131,7 @@
                 <button type="button" class="config-tab-button" data-tab="search" role="tab" aria-selected="false" aria-controls="tab-search">搜索匹配</button>
                 <button type="button" class="config-tab-button" data-tab="audio" role="tab" aria-selected="false" aria-controls="tab-audio">音频处理</button>
                 <button type="button" class="config-tab-button" data-tab="tts" role="tab" aria-selected="false" aria-controls="tab-tts">语音TTS</button>
+                <button type="button" class="config-tab-button" data-tab="recommend" role="tab" aria-selected="false" aria-controls="tab-recommend">AI推荐</button>
                 <button type="button" class="config-tab-button" data-tab="voicecmd" role="tab" aria-selected="false" aria-controls="tab-voicecmd">语音命令</button>
                 <button type="button" class="config-tab-button" data-tab="device" role="tab" aria-selected="false" aria-controls="tab-device">设备对话</button>
                 <button type="button" class="config-tab-button" data-tab="other" role="tab" aria-selected="false" aria-controls="tab-other">其他</button>
@@ -316,6 +266,39 @@
                         <input id="stop_tts_msg" type="text" value="收到,再见" />
 
 
+                    </div>
+                    </div>
+                </div>
+
+                <div class="config-tab-content setting-panel" id="tab-recommend" role="tabpanel">
+                    <div class="card-content">
+                    <div class="rows">
+                        <label for="enable_daily_recommend">启用今日推荐:</label>
+                        <select id="enable_daily_recommend">
+                            <option value="false" selected>false</option>
+                            <option value="true">true</option>
+                        </select>
+
+                        <label for="llm_endpoint">LLM API 地址 (OpenAI 兼容):</label>
+                        <input id="llm_endpoint" type="text" placeholder="http://127.0.0.1:8080/v1" />
+
+                        <label for="llm_api_key">LLM API Key:</label>
+                        <input id="llm_api_key" type="password" placeholder="sk-..." />
+
+                        <label for="llm_model">模型名称:</label>
+                        <input id="llm_model" type="text" placeholder="qwen-plus" />
+
+                        <label for="daily_recommend_count">推荐歌曲数量:</label>
+                        <input id="daily_recommend_count" type="number" value="20" />
+
+                        <label for="llm_supports_schema">LLM 支持 json_schema:</label>
+                        <select id="llm_supports_schema">
+                            <option value="false" selected>false (DeepSeek 等)</option>
+                            <option value="true">true</option>
+                        </select>
+
+                        <label for="explore_ratio">探索比例 (0~1):</label>
+                        <input id="explore_ratio" type="number" min="0" max="1" step="0.05" value="0.15" />
                     </div>
                     </div>
                 </div>

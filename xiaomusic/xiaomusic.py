@@ -19,6 +19,7 @@ from xiaomusic.music_library import MusicLibrary
 from xiaomusic.utils.system_utils import deepcopy_data_no_sensitive_info
 from xiaomusic.utils.text_utils import chinese_to_number
 from xiaomusic.utils.emby_utils import EmbyUtil
+from xiaomusic.utils import daily_recommend as daily_recommend_module
 
 
 class XiaoMusic:
@@ -532,6 +533,90 @@ class XiaoMusic:
         return False
 
 
+
+    # ==================== 今日推荐 ====================
+
+    def _register_recommend_tracks(self, rec):
+        """把推荐曲目注册进 all_music（播放链路按三段式歌名取 Audio）。"""
+        if rec is None or self.music_library is None:
+            return
+        for audio in rec.tracks:
+            name = (
+                f"{getattr(audio, 'name', '')} - {getattr(audio, 'album', '')} - "
+                f"{getattr(audio, 'album_artist', '')}"
+            )
+            self.music_library.all_music[name] = audio
+
+    async def generate_daily_recommend(self, renew: bool = False):
+        """只生成 / 恢复今日推荐歌单，不触发播放（供定时任务与 HTTP 调用）。"""
+        rec = await asyncio.to_thread(
+            daily_recommend_module.generate, self.config, self.emby_util, renew
+        )
+        # 缓存恢复路径也要注册，保证重启后歌单可播
+        self._register_recommend_tracks(rec)
+        return rec
+
+    # 口令:播放今日推荐
+    async def daily_recommend(self, did="", renew=False, **kwargs):
+        """生成今日推荐歌单、播放，并用 TTS 播报推荐理由。"""
+        if not self.config.enable_daily_recommend:
+            await self.do_tts(did, "今日推荐功能未开启")
+            return None
+
+        try:
+            rec = await self.generate_daily_recommend(renew=bool(renew))
+        except Exception as exc:
+            self.log.exception(f"生成今日推荐失败: {exc}")
+            await self.do_tts(did, "今日推荐生成失败，请稍后再试")
+            return None
+
+        if not rec.tracks:
+            await self.do_tts(did, "今日推荐暂时没有可用歌曲")
+            return None
+
+        self._register_recommend_tracks(rec)
+
+        # 固化成歌单（play_list_update_music 会自动落盘到 custom_play_list_json）
+        self.music_library.play_list_update_music("今日推荐", rec.track_names)
+        await self.do_play_music_list(did, "今日推荐", rec.track_names[0])
+
+        # 节目叙事：总起 + 各段串联语，让推荐从「一句话」变成一份节目单
+        message = rec.reason
+        if rec.segments:
+            for seg in rec.segments:
+                transition = (seg.get("transition") or "").strip()
+                theme = (seg.get("theme") or "").strip()
+                if transition:
+                    message += f"。{theme}：{transition}" if theme else f"。{transition}"
+        if renew:
+            message += f"。今日已换批 {rec.renewals} 次，最多 3 次"
+        try:
+            await self.do_tts(did, message)
+        except Exception as exc:
+            self.log.warning(f"播报今日推荐理由失败: {exc}")
+        self.log.info(f"今日推荐生成完成: source={rec.source}, tracks={len(rec.tracks)}")
+        return rec
+
+    # 口令:换一批今日推荐
+    async def daily_recommend_renew(self, did="", **kwargs):
+        return await self.daily_recommend(did=did, renew=True)
+
+    # 口令:不喜欢当前歌曲（30 天内不再推荐）
+    async def snooze_current(self, did="", **kwargs):
+        if not self.config.enable_daily_recommend:
+            await self.do_tts(did, "今日推荐功能未开启")
+            return False
+        device = self.device_manager.devices[did]
+        cur_music = device.get_cur_music()
+        audio = self.music_library.all_music.get(cur_music) if cur_music else None
+        if not audio:
+            await self.do_tts(did, "没有正在播放的歌曲")
+            return False
+        await asyncio.to_thread(
+            daily_recommend_module.snooze_track, self.config, str(audio.id)
+        )
+        await self.do_tts(did, "收到，这首歌 30 天内不再推荐")
+        return True
 
     # 更新每个设备的歌单
     def update_all_playlist(self):

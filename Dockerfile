@@ -1,66 +1,43 @@
-# 定义构建参数，用于指定基础镜像
-ARG PYTHON_VERSION=3.14
+# 多阶段构建：与 .python-version(3.10) 对齐，避免 3.14 上依赖无 wheel 被迫源码编译
+ARG PYTHON_VERSION=3.12
 
-# 使用amd64架构的Alpine基础镜像
-FROM python:${PYTHON_VERSION}-alpine AS builder
+FROM python:${PYTHON_VERSION}-slim-bookworm AS builder
 
-# 安装构建依赖（Alpine系统）
-RUN apk add --no-cache \
-    build-base \
-    zlib-dev \
-    jpeg-dev \
-    freetype-dev \
-    lcms2-dev \
-    openjpeg-dev \
-    tiff-dev \
-    libwebp-dev
+# pdm.lock 锁的 aiohttp 3.8.6 在 3.12 上没有 wheel，需要 gcc 源码编译
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# 安装PDM
-RUN pip install -U pdm
 ENV PDM_CHECK_UPDATE=false
+RUN pip install --no-cache-dir -U pdm
 
 WORKDIR /app
-COPY pyproject.toml README.md ./
-
-# 安装Python依赖
+COPY pyproject.toml pdm.lock README.md ./
 RUN pdm install --prod --no-editable -v
 
-# 复制应用代码
+# -------------------------- 运行阶段 --------------------------
+FROM python:${PYTHON_VERSION}-slim-bookworm AS runner
+
+# Pillow 等依赖需要的基础运行库
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libjpeg62-turbo zlib1g libfreetype6 liblcms2-2 libwebp7 libtiff6 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=builder /app/.venv ./.venv
 COPY xiaomusic/ ./xiaomusic/
 COPY app.py .
-
-# -------------------------- 运行阶段 --------------------------
-# 使用amd64架构的Alpine运行时镜像
-FROM python:${PYTHON_VERSION}-alpine AS runner
-
-# 安装运行时依赖（Alpine系统）
-RUN apk add --no-cache
-
-# 设置工作目录
-WORKDIR /app
-
-# 从构建阶段复制产物
-COPY --from=builder /app/.venv ./.venv
-COPY --from=builder /app/xiaomusic/ ./xiaomusic/
-COPY --from=builder /app/app.py .
-COPY --from=builder /app/xiaomusic/__init__.py /base_version.py
-
-# 创建配置目录
-RUN mkdir -p /app/conf
-
-# 复制配置文件
 COPY conf/replace.json /app/conf/
 
-RUN touch /app/.dockerenv
+# 代码用 /app/.dockerenv 判断是否运行在 Docker 中
+RUN touch /app/.dockerenv && mkdir -p /app/conf /app/music
 
-# 设置卷和暴露端口
 VOLUME /app/conf
 VOLUME /app/music
 EXPOSE 8090
 
-# 设置环境变量
 ENV TZ=Asia/Shanghai
 ENV PATH=/app/.venv/bin:/usr/local/bin:$PATH
 
-# 直接启动应用
 CMD ["/app/.venv/bin/python3", "/app/app.py"]

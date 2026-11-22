@@ -206,7 +206,8 @@ class Audio:
     """音频类，用于存储音乐信息"""
     def __init__(self, name="", id="", index=0, duration=0, album="", album_id="", 
                  album_artist="", artist_items=None, album_artists=None, is_favorite=False,
-                 user_id=""):
+                 user_id="", genres=None, production_year=0, play_count=0, date_created="",
+                 last_played_at=""):
         self.name = name
         self.id = id
         self.index = index
@@ -218,6 +219,12 @@ class Audio:
         self.album_artists = album_artists or []
         self.is_favorite = is_favorite
         self.user_id = user_id  # 搜索时使用的 Emby 用户 ID
+        # 今日推荐所需的元数据（Emby 原始 item 里本就有，之前被丢弃）
+        self.genres = genres or []
+        self.production_year = production_year or 0
+        self.play_count = play_count or 0
+        self.date_created = date_created or ""
+        self.last_played_at = last_played_at or ""
         self.play_session_id = ""  # PlaybackInfo 返回的播放会话 ID
         self.media_source_id = ""  # 媒体源 ID
         self.container = "flac"
@@ -233,6 +240,9 @@ class EmbyUtil:
     # Emby 客户端标识常量
     CLIENT_NAME = "XiaoEmby"
     DEVICE_NAME = "小爱音箱"
+    # /Items 默认只返回精简字段，流派/年份/最近播放时间必须显式请求，
+    # 否则 item 里连 Genres 字段都不存在（不是空数组）。
+    DETAIL_FIELDS = "Genres,ProductionYear,Path,UserDataLastPlayedDate"
 
     def __init__(self, host, user_id, api_key, log, version="1.0.0"):
         # 确保 host 包含协议前缀
@@ -319,7 +329,8 @@ class EmbyUtil:
             "Recursive": True,
             "MediaTypes": "Audio",
             "Limit": limit,  # 总是获取多首歌曲
-            "SortBy": "Random",  
+            "SortBy": "Random",
+            "Fields": self.DETAIL_FIELDS,
             "api_key": self.api_key
         }
         
@@ -366,7 +377,12 @@ class EmbyUtil:
                               artist_items=item.get("ArtistItems", []),
                               album_artists=item.get("AlbumArtists", []),
                               is_favorite=is_favorite,
-                              user_id=current_user_id)
+                              user_id=current_user_id,
+                              genres=item.get("Genres", []),
+                              production_year=item.get("ProductionYear", 0),
+                              play_count=user_data.get("PlayCount", 0),
+                              date_created=item.get("DateCreated", ""),
+                              last_played_at=user_data.get("LastPlayedDate", ""))
                 audio_list.append(audio)
 
             # 播放专辑的话根据索引排序
@@ -429,6 +445,190 @@ class EmbyUtil:
         else:
             self.log.info(f"原始和转换后搜索均无结果")
             return []
+
+    def _parse_recommend_item(self, item: dict, user_id: str) -> Audio:
+        """把 Emby item 解析为 Audio（仅今日推荐路径使用，保持主搜索链路零改动）。"""
+        user_data = item.get("UserData") or {}
+        try:
+            duration = int(int(item.get("RunTimeTicks", 10000000)) / 10000000)
+        except (TypeError, ValueError):
+            duration = 0
+        return Audio(
+            name=item.get("Name", ""),
+            id=item.get("Id", ""),
+            index=item.get("IndexNumber", 1),
+            duration=duration,
+            album=item.get("Album", ""),
+            album_id=item.get("AlbumId", ""),
+            album_artist=item.get("AlbumArtist", ""),
+            artist_items=item.get("ArtistItems", []) or [],
+            album_artists=item.get("AlbumArtists", []) or [],
+            is_favorite=user_data.get("IsFavorite", False),
+            user_id=user_id,
+            genres=item.get("Genres", []) or [],
+            production_year=item.get("ProductionYear", 0),
+            play_count=user_data.get("PlayCount", 0),
+            date_created=item.get("DateCreated", ""),
+            last_played_at=user_data.get("LastPlayedDate", ""),
+        )
+
+    def fetch_music_genres(self) -> list[str]:
+        """拿全库音乐流派清单（缓存到实例），用于分层采样。"""
+        if getattr(self, "_music_genres_cache", None) is not None:
+            return self._music_genres_cache
+        genres: list[str] = []
+        try:
+            r = requests.get(
+                f"{self.host}/emby/MusicGenres",
+                params={"api_key": self.api_key, "UserId": self.user_id},
+                timeout=20,
+            )
+            r.raise_for_status()
+            genres = [
+                x.get("Name") for x in r.json().get("Items", []) if x.get("Name")
+            ]
+        except Exception as e:
+            self.log.error(f"拉取 Emby 音乐流派失败: {e}")
+        self._music_genres_cache = genres
+        return genres
+
+    def fetch_total_tracks(self) -> int | None:
+        """全库曲目总数，用于给 LLM 展示真实库规模。"""
+        try:
+            r = requests.get(
+                f"{self.host}/emby/Users/{self.user_id}/Items",
+                params={
+                    "Recursive": True,
+                    "MediaTypes": "Audio",
+                    "Limit": 1,
+                    "api_key": self.api_key,
+                },
+                timeout=20,
+            )
+            r.raise_for_status()
+            return int(r.json().get("TotalRecordCount", 0)) or None
+        except Exception as e:
+            self.log.error(f"拉取 Emby 曲目总数失败: {e}")
+            return None
+
+    def fetch_recommend_candidates(self, limit=None, user_id=None) -> list[Audio]:
+        """分层采样候选池：按流派分桶 + 新发行桶，并发拉取后去重。
+
+        limit=None 时按库总量自适应（如 7 万首 → 约 2100 首），
+        避免把候选数写死成 800 导致大库的丰富度天花板过低。
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        current_user_id = user_id or self.user_id
+        url = f"{self.host}/emby/Users/{current_user_id}/Items"
+
+        if limit is None:
+            from xiaomusic.utils.daily_recommend import (
+                CANDIDATE_MAX, CANDIDATE_MIN, CANDIDATE_RATIO, GENRE_MAX,
+            )
+            total = self.fetch_total_tracks() or 0
+            limit = min(max(int(total * CANDIDATE_RATIO), CANDIDATE_MIN), CANDIDATE_MAX)
+
+        genres = self.fetch_music_genres()
+        selected = genres[:GENRE_MAX]
+        per_genre = max(12, limit // max(len(selected), 1))
+
+        def fetch_batch(extra: dict) -> list:
+            params = {
+                "Recursive": True,
+                "IncludeItemTypes": "Audio",
+                "Limit": extra.pop("Limit", per_genre),
+                "Fields": self.DETAIL_FIELDS,
+                "api_key": self.api_key,
+            }
+            params.update(extra)
+            try:
+                r = requests.get(url=url, params=params, timeout=30)
+                r.raise_for_status()
+                return r.json().get("Items", [])
+            except Exception as e:
+                self.log.error(f"分层采样失败 {extra}: {e}")
+                return []
+
+        batches: list[dict] = [{"Genres": g, "SortBy": "Random"} for g in selected]
+        batches.append({"SortBy": "DateCreated", "SortOrder": "Descending", "Limit": 100})
+        if not selected:
+            batches = [{"SortBy": "Random", "Limit": limit}]
+
+        try:
+            with ThreadPoolExecutor(max_workers=6) as executor:
+                results = list(executor.map(fetch_batch, batches))
+        except Exception as e:
+            self.log.error(f"分层采样并发失败: {e}")
+            return []
+
+        items: dict = {}
+        for batch in results:
+            for item in batch:
+                if item.get("Id"):
+                    items[item["Id"]] = item
+        return [
+            self._parse_recommend_item(item, current_user_id)
+            for item in list(items.values())[:limit]
+        ]
+
+    def fetch_recently_played(self, limit=50, user_id=None) -> list[Audio]:
+        """按 DatePlayed 拉最近播放。
+
+        很多 Emby 库的 UserData.PlayCount / LastPlayedDate 是空的，但 SortBy=DatePlayed
+        的排序本身就是播放历史，这是唯一可靠的「最近在听谁」信号。
+        """
+        current_user_id = user_id or self.user_id
+        url = f"{self.host}/emby/Users/{current_user_id}/Items"
+        payload = {
+            "Recursive": True,
+            "IncludeItemTypes": "Audio",
+            "SortBy": "DatePlayed",
+            "SortOrder": "Descending",
+            "Limit": limit,
+            "Fields": self.DETAIL_FIELDS,
+            "api_key": self.api_key,
+        }
+        try:
+            r = requests.get(url=url, params=payload, timeout=30)
+            r.raise_for_status()
+            items = r.json().get("Items", [])
+        except Exception as e:
+            self.log.error(f"拉取最近播放失败: {e}")
+            return []
+        return [self._parse_recommend_item(item, current_user_id) for item in items]
+
+    def fetch_tracks_by_ids(self, ids, user_id=None) -> list[Audio]:
+        """按 id 取回完整 Audio（含 stream_url），用于恢复当天推荐与真正播放。"""
+        ids = [str(i) for i in ids if i]
+        if not ids:
+            return []
+        current_user_id = user_id or self.user_id
+        url = f"{self.host}/emby/Users/{current_user_id}/Items"
+        payload = {
+            "Ids": ",".join(ids),
+            "Limit": len(ids),
+            "Fields": self.DETAIL_FIELDS,
+            "api_key": self.api_key,
+        }
+        try:
+            r = requests.get(url=url, params=payload, timeout=30)
+            r.raise_for_status()
+            items = r.json().get("Items", [])
+        except Exception as e:
+            self.log.error(f"按 ID 拉取今日推荐曲目失败: {e}")
+            return []
+        audios = [self._parse_recommend_item(item, current_user_id) for item in items]
+        # Emby 不保证按 Ids 顺序返回，按请求顺序重排
+        id_order = {str(track_id): i for i, track_id in enumerate(ids)}
+        audios.sort(key=lambda a: id_order.get(str(a.id), 9999))
+        for audio in audios:
+            try:
+                self.__set_audio_container(audio)
+                self.__set_audio_stream_url(audio)
+            except Exception as e:
+                self.log.error(f"准备今日推荐曲目播放信息失败: {audio.name}, {e}")
+        return audios
 
     def favorite_audio(self, audio_id: str, user_id: str = None) -> bool:
         """
