@@ -1010,6 +1010,20 @@ def _load_cache(cfg) -> dict:
         return {}
 
 
+def is_fresh(cfg, renew: bool = False) -> bool:
+    """当天缓存可直接使用、generate 会秒回时返回 True。
+
+    与 generate() 的当天冻结逻辑保持一致：换批且配额未满时仍需重新生成。
+    供播放口令判断要不要先播「生成中」提示，命中缓存时避免多一次播报。
+    """
+    cache = _load_cache(cfg)
+    if not cache.get("track_ids") or cache.get("date") != _today(cfg):
+        return False
+    if renew and int(cache.get("renewals", 0) or 0) < MAX_RENEWALS:
+        return False
+    return True
+
+
 def _save_cache(cfg, rec: DailyRecommendation) -> None:
     data = {
         "date": rec.date,

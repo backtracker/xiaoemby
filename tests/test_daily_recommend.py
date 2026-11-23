@@ -15,6 +15,7 @@ from xiaomusic.utils.daily_recommend import (
     _save_history,
     build_catalog,
     generate,
+    is_fresh,
     pick_tracks,
     pick_tracks_segmented,
     snooze_track,
@@ -423,6 +424,29 @@ def test_generate_with_llm_recipe_end_to_end(tmp_path, monkeypatch):
     # 历史与 snooze 数据结构已落盘
     assert (tmp_path / "recommend_history.json").exists()
     assert len(json.loads((tmp_path / "recommend_history.json").read_text())) >= 1
+
+
+def test_is_fresh_matches_generate_cache_freeze(tmp_path, monkeypatch):
+    """「生成中」提示的跳过条件要与 generate 的当天冻结逻辑一致。"""
+    tracks = make_candidates()
+    cfg = make_cfg(tmp_path)
+    import xiaomusic.utils.daily_recommend as module
+
+    original = module._today
+    module._today = lambda cfg: "2026-11-22"
+    try:
+        assert is_fresh(cfg) is False  # 尚无缓存
+        _save_cache(cfg, _build_result(tracks, "理由", "llm", "2026-11-22", 0))
+        assert is_fresh(cfg) is True  # 当天缓存可秒回
+        assert is_fresh(cfg, renew=True) is False  # 换批仍需重新生成
+
+        _save_cache(cfg, _build_result(tracks, "理由", "llm", "2026-11-22", 3))
+        assert is_fresh(cfg, renew=True) is True  # 换批配额用尽后走缓存
+
+        module._today = lambda cfg: "2026-11-23"
+        assert is_fresh(cfg) is False  # 隔天缓存失效
+    finally:
+        module._today = original
 
 
 def test_generate_restores_same_day_cache_without_calling_llm(tmp_path, monkeypatch):

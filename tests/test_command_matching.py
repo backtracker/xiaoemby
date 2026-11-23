@@ -12,6 +12,10 @@ test_data = [
     ("播放今天的推荐", "daily_recommend", {}),
     ("播放今天的推荐音乐", "daily_recommend", {}),
     ("来点今天的推荐歌单", "daily_recommend", {}),
+    # 带「我的」的新口令（避开小爱原生「播放今日推荐」抢答）
+    ("播放我的今日推荐", "daily_recommend", {}),
+    ("播放我的推荐", "daily_recommend", {}),
+    ("来点我的今日推荐歌曲", "daily_recommend", {}),
 
     # 测试播放用户别名喜欢的歌曲（新增多用户功能）
     ("播放爸爸喜欢的歌", "play", {"user_alias": "爸爸"}),
