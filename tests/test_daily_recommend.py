@@ -13,6 +13,7 @@ from xiaomusic.utils.daily_recommend import (
     _recommend_penalty,
     _save_cache,
     _save_history,
+    ask_llm,
     build_catalog,
     generate,
     is_fresh,
@@ -75,6 +76,7 @@ def make_cfg(cache_dir, **overrides):
         "llm_model": "",
         "daily_recommend_count": 20,
         "llm_supports_schema": False,
+        "llm_max_tokens": 6000,
         "explore_ratio": 0.15,
     }
     values.update(overrides)
@@ -380,6 +382,38 @@ class FakeEmby:
 
     def fetch_total_tracks(self):
         return len(self.tracks)
+
+
+def test_ask_llm_uses_configured_max_tokens(tmp_path, monkeypatch):
+    """max_tokens 走配置（推理模型思考需更大预算），默认 6000。"""
+    import xiaomusic.utils.daily_recommend as module
+
+    cfg = make_cfg(tmp_path, llm_endpoint="http://fake/v1", llm_api_key="k", llm_model="m")
+    captured = {}
+
+    class FakeResponse:
+        ok = True
+        status_code = 200
+
+        def json(self):
+            return {"choices": [{"message": {"content": '{"schema_version":1}'}}]}
+
+    def fake_post(url, json, headers, timeout):
+        captured.update(json)
+        return FakeResponse()
+
+    monkeypatch.setattr(module.requests, "post", fake_post)
+    ask_llm(build_catalog(make_candidates()), cfg)
+    assert captured["max_tokens"] == 6000
+
+    cfg.llm_max_tokens = 9000
+    ask_llm(build_catalog(make_candidates()), cfg)
+    assert captured["max_tokens"] == 9000
+
+    # 缺省时兜底 6000（兼容旧配置对象没有该字段）
+    del cfg.llm_max_tokens
+    ask_llm(build_catalog(make_candidates()), cfg)
+    assert captured["max_tokens"] == 6000
 
 
 def test_generate_with_llm_recipe_end_to_end(tmp_path, monkeypatch):

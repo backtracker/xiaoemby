@@ -206,6 +206,9 @@ class Config:
     llm_supports_schema: bool = (
         os.getenv("XIAOMUSIC_LLM_SUPPORTS_SCHEMA", "false").lower() == "true"
     )
+    # LLM 输出预算（max_tokens）。推理模型思考会先吃掉一大截 token，
+    # 预算太小会导致 content 为空、recipe 解析失败并回退本地混歌；默认 6000。
+    llm_max_tokens: int = int(os.getenv("XIAOMUSIC_LLM_MAX_TOKENS", "6000"))
     # 探索配额比例（discover 意图下留多少比例的「没听过」曲目）
     explore_ratio: float = float(os.getenv("XIAOMUSIC_EXPLORE_RATIO", "0.15"))
 

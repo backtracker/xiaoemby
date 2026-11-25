@@ -427,6 +427,8 @@ def ask_llm(catalog: dict, cfg) -> dict:
     if not endpoint:
         raise LLMError("未配置 LLM endpoint")
     url = f"{endpoint}/chat/completions"
+    # 推理模型的思考 token 会占用输出预算，预算太小会让 content 为空导致解析失败。
+    max_tokens = max(1, int(getattr(cfg, "llm_max_tokens", 6000) or 6000))
     payload = {
         "model": getattr(cfg, "llm_model", ""),
         "messages": [
@@ -437,7 +439,7 @@ def ask_llm(catalog: dict, cfg) -> dict:
             },
         ],
         "temperature": 0.85,
-        "max_tokens": 1600,  # 分段节目单比原来的扁平 recipe 长得多
+        "max_tokens": max_tokens,
     }
     headers = {
         "Authorization": f"Bearer {getattr(cfg, 'llm_api_key', '')}",

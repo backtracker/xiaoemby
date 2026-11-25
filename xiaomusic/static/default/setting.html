@@ -297,6 +297,10 @@
                             <option value="true">true</option>
                         </select>
 
+                        <label for="llm_max_tokens">LLM 输出预算 (max_tokens):</label>
+                        <input id="llm_max_tokens" type="number" min="1" step="100" value="6000" />
+                        <small>推理模型思考会占用预算；太小会导致今日推荐生成失败并回退本地混歌</small>
+
                         <label for="explore_ratio">探索比例 (0~1):</label>
                         <input id="explore_ratio" type="number" min="0" max="1" step="0.05" value="0.15" />
                     </div>

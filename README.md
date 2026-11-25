@@ -68,6 +68,7 @@ sudo docker run -d --name xiaoemby -p 8090:8090 \
 - `llm_model`：模型名称（如 `deepseek-chat`）
 - `daily_recommend_count`：推荐歌曲数量（默认 20）
 - `llm_supports_schema`：LLM 是否支持 `response_format=json_schema`；DeepSeek 等不支持的填 `false`（默认），直接用 `json_object` 模式
+- `llm_max_tokens`：LLM 输出预算 `max_tokens`（默认 6000）。推理模型的思考 token 会占用预算，设太小会导致输出为空、生成失败并回退本地混歌；若用推理模型还不够可适当调大
 - `explore_ratio`：探索曲目比例（默认 0.15，即 20 首里留约 3 首"没听过"的歌）
 
 **工作原理**：LLM 只看库的聚合特征（流派/年代/歌手分布、最近播放口味、最近推荐记录），输出一份**分段节目单**（主题、串联语、各段特征组合），**绝不输出具体歌曲**。本地引擎再按段从 Emby 曲库筛歌、去重、落库。因此有三层保障：
