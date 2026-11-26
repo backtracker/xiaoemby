@@ -39,7 +39,7 @@ async def proxy_emby_audio(audio_id: str, container: str):
     try:
         original_url = build_emby_stream_url(
             xiaomusic.config.emby_host,
-            xiaomusic.config.emby_api_key,
+            xiaomusic.emby_util.get_access_token() if xiaomusic.emby_util else "",
             audio_id,
             container,
         )

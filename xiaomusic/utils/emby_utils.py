@@ -244,40 +244,110 @@ class EmbyUtil:
     # 否则 item 里连 Genres 字段都不存在（不是空数组）。
     DETAIL_FIELDS = "Genres,ProductionYear,Path,UserDataLastPlayedDate"
 
-    def __init__(self, host, user_id, api_key, log, version="1.0.0"):
+    def __init__(self, host, user_id, log, version="1.0.0",
+                 username=None, password=None):
         # 确保 host 包含协议前缀
         if host and not host.startswith(("http://", "https://")):
             host = f"http://{host}"  # 默认使用 http
         self.host = host
         self.user_id = user_id
-        self.api_key = api_key
         self.log = log
         self.version = version
-        # 生成稳定的设备 ID（基于 host + api_key 的哈希，确保重启后一致）
-        self._device_id = f"xiaoemby-{uuid.uuid5(uuid.NAMESPACE_DNS, f'{host}-{api_key}')}"
+        self.username = username or ""
+        self.password = password or ""
+        self._access_token = None
+        # 稳定的设备 ID（基于 host + 用户名，重启后一致）
+        self._device_id = f"xiaoemby-{uuid.uuid5(uuid.NAMESPACE_DNS, f'{host}-{self.username}')}"
+        if self.username and self.password:
+            self.login()
+        else:
+            self.log.error("未配置 Emby 用户名/密码，无法登录获取用户 token")
 
-    def _get_auth_header(self):
-        """构建 Emby 请求 Headers，包含设备标识和认证信息
-        
-        注意：HTTP Header 仅支持 ASCII 字符，中文需要 URL 编码
+    def get_access_token(self):
+        """供外部模块（如音频代理）取用登录 token"""
+        return self._access_token
+
+    def login(self):
+        """用用户名密码登录 Emby，换取用户级 access token。
+
+        Emby 的服务器级 API Key 不绑定任何用户，用它上报播放时创建的会话
+        没有 UserId，面板会显示 unknown；用户登录得到的 token 才带用户身份。
         """
         device_encoded = urllib.parse.quote(self.DEVICE_NAME)
-        return {
+        url = f"{self.host}/Users/AuthenticateByName"
+        headers = {
             "X-Emby-Authorization": (
                 f'MediaBrowser Client="{self.CLIENT_NAME}", '
                 f'Device="{device_encoded}", '
                 f'DeviceId="{self._device_id}", '
                 f'Version="{self.version}"'
             ),
-            "X-Emby-Token": self.api_key,
+            "Content-Type": "application/json",
+        }
+        try:
+            response = requests.post(
+                url,
+                json={"Username": self.username, "Pw": self.password},
+                headers=headers,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                self._access_token = data.get("AccessToken", "")
+                if self._access_token:
+                    self.log.info(
+                        f"Emby 用户登录成功: username={self.username}, "
+                        f"userId={data.get('User', {}).get('Id', '')}"
+                    )
+                    return True
+                self.log.error("Emby 用户登录成功但未返回 AccessToken")
+            else:
+                self.log.error(
+                    f"Emby 用户登录失败: username={self.username}, "
+                    f"状态码={response.status_code}, 响应={response.text[:200]}"
+                )
+        except Exception as e:
+            self.log.error(f"Emby 用户登录异常: {e}")
+        self._access_token = None
+        return False
+
+    def _get_auth_header(self):
+        """构建 Emby 请求 Headers：统一使用用户登录 token
+
+        注意：HTTP Header 仅支持 ASCII 字符，中文需要 URL 编码
+        """
+        device_encoded = urllib.parse.quote(self.DEVICE_NAME)
+        auth = (
+            f'MediaBrowser Client="{self.CLIENT_NAME}", '
+            f'Device="{device_encoded}", '
+            f'DeviceId="{self._device_id}", '
+            f'Version="{self.version}"'
+        )
+        if self._access_token:
+            auth += f', UserId="{self.user_id}"'
+        return {
+            "X-Emby-Authorization": auth,
+            "X-Emby-Token": self._access_token or "",
             "Content-Type": "application/json"
         }
+
+    def _post_playback(self, url, payload, params):
+        """发送播放上报；token 失效时重新登录并重试一次"""
+        response = requests.post(
+            url, json=payload, headers=self._get_auth_header(), params=params
+        )
+        if response.status_code == 401 and self.username and self.password:
+            self.log.warning("Emby token 已失效，尝试重新登录")
+            if self.login():
+                response = requests.post(
+                    url, json=payload, headers=self._get_auth_header(), params=params
+                )
+        return response
 
     def __set_audio_container(self, audio: Audio):
         """
         设置音频流 container、file_path，并提取 PlaySessionId 和 MediaSourceId
         """
-        url = f"{self.host}/Items/{audio.id}/PlaybackInfo?api_key={self.api_key}"
+        url = f"{self.host}/Items/{audio.id}/PlaybackInfo?api_key={self._access_token}"
         response = requests.get(url)
         if response.status_code == 200:
             c = "mp3"
@@ -305,7 +375,7 @@ class EmbyUtil:
         """
         # 构建音频流URL，只对需要编码的参数进行编码
         container_encoded = urllib.parse.quote(audio.container)
-        api_key_encoded = urllib.parse.quote(self.api_key)
+        api_key_encoded = urllib.parse.quote(self._access_token)
         stream_url = f"/emby/Audio/{audio.id}/stream?Container={container_encoded}&api_key={api_key_encoded}"
         audio.stream_url = f"{self.host}{stream_url}"
 
@@ -331,7 +401,7 @@ class EmbyUtil:
             "Limit": limit,  # 总是获取多首歌曲
             "SortBy": "Random",
             "Fields": self.DETAIL_FIELDS,
-            "api_key": self.api_key
+            "api_key": self._access_token
         }
         
         # 构建搜索关键词
@@ -480,7 +550,7 @@ class EmbyUtil:
         try:
             r = requests.get(
                 f"{self.host}/emby/MusicGenres",
-                params={"api_key": self.api_key, "UserId": self.user_id},
+                params={"api_key": self._access_token, "UserId": self.user_id},
                 timeout=20,
             )
             r.raise_for_status()
@@ -501,7 +571,7 @@ class EmbyUtil:
                     "Recursive": True,
                     "MediaTypes": "Audio",
                     "Limit": 1,
-                    "api_key": self.api_key,
+                    "api_key": self._access_token,
                 },
                 timeout=20,
             )
@@ -539,7 +609,7 @@ class EmbyUtil:
                 "IncludeItemTypes": "Audio",
                 "Limit": extra.pop("Limit", per_genre),
                 "Fields": self.DETAIL_FIELDS,
-                "api_key": self.api_key,
+                "api_key": self._access_token,
             }
             params.update(extra)
             try:
@@ -587,7 +657,7 @@ class EmbyUtil:
             "SortOrder": "Descending",
             "Limit": limit,
             "Fields": self.DETAIL_FIELDS,
-            "api_key": self.api_key,
+            "api_key": self._access_token,
         }
         try:
             r = requests.get(url=url, params=payload, timeout=30)
@@ -609,7 +679,7 @@ class EmbyUtil:
             "Ids": ",".join(ids),
             "Limit": len(ids),
             "Fields": self.DETAIL_FIELDS,
-            "api_key": self.api_key,
+            "api_key": self._access_token,
         }
         try:
             r = requests.get(url=url, params=payload, timeout=30)
@@ -646,7 +716,7 @@ class EmbyUtil:
         url = f"{self.host}/Users/{user_id}/FavoriteItems/{audio_id}"
 
         params = {
-            "api_key": self.api_key
+            "api_key": self._access_token
         }
         headers = {
             "Accept": "application/json"
@@ -681,7 +751,6 @@ class EmbyUtil:
         """
         current_user_id = user_id or self.user_id
         url = f"{self.host}/Sessions/Playing"
-        headers = self._get_auth_header()
         payload = {
             "ItemId": str(item_id),
             "MediaSourceId": str(media_source_id or item_id),
@@ -695,7 +764,7 @@ class EmbyUtil:
         try:
             # 使用 UserId 查询参数关联用户
             params = {"UserId": current_user_id} if current_user_id else {}
-            response = requests.post(url, json=payload, headers=headers, params=params)
+            response = self._post_playback(url, payload, params)
             self.log.info(
                 f"上报播放开始: ItemId={item_id}, UserId={current_user_id}, "
                 f"PlaySessionId={payload['PlaySessionId']}, 状态码={response.status_code}"
@@ -721,7 +790,6 @@ class EmbyUtil:
         """
         current_user_id = user_id or self.user_id
         url = f"{self.host}/Sessions/Playing/Progress"
-        headers = self._get_auth_header()
         payload = {
             "ItemId": str(item_id),
             "MediaSourceId": str(media_source_id or item_id),
@@ -733,7 +801,7 @@ class EmbyUtil:
         
         try:
             params = {"UserId": current_user_id} if current_user_id else {}
-            response = requests.post(url, json=payload, headers=headers, params=params)
+            response = self._post_playback(url, payload, params)
             self.log.debug(
                 f"上报播放进度: ItemId={item_id}, PositionTicks={position_ticks}, "
                 f"状态码={response.status_code}"
@@ -757,7 +825,6 @@ class EmbyUtil:
         """
         current_user_id = user_id or self.user_id
         url = f"{self.host}/Sessions/Playing/Stopped"
-        headers = self._get_auth_header()
         payload = {
             "ItemId": str(item_id),
             "MediaSourceId": str(media_source_id or item_id),
@@ -767,7 +834,7 @@ class EmbyUtil:
         
         try:
             params = {"UserId": current_user_id} if current_user_id else {}
-            response = requests.post(url, json=payload, headers=headers, params=params)
+            response = self._post_playback(url, payload, params)
             self.log.info(
                 f"上报播放停止: ItemId={item_id}, UserId={current_user_id}, "
                 f"PositionTicks={position_ticks}, 状态码={response.status_code}"
@@ -782,10 +849,12 @@ if __name__ == '__main__':
     test_log = logging.getLogger("test_emby_util")
     
     BASE_URL = "http://127.0.0.1:48096"
-    API_KEY = "your_emby_api_key_here"
     USER_ID = "your_emby_user_id_here"
+    USERNAME = "your_emby_username_here"
+    PASSWORD = "your_emby_password_here"
 
-    eu = EmbyUtil(host=BASE_URL, user_id=USER_ID, api_key=API_KEY, log=test_log)
+    eu = EmbyUtil(host=BASE_URL, user_id=USER_ID, username=USERNAME,
+                  password=PASSWORD, log=test_log)
     #audio_list = eu.search_music(album="天黑")
     #r = eu.search_music(name="东北民谣", artist="毛不易")
     # audio_list = eu.search_music( artist="游鸿明", years="2001")

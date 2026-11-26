@@ -33,6 +33,7 @@ async def getsetting(need_device_list: bool = False):
     config_data = xiaomusic.getconfig()
     data = asdict(config_data)
     data["password"] = "******"
+    data["emby_password"] = "******"
     data["llm_api_key"] = "******"
     if need_device_list:
         device_list = await xiaomusic.getalldevices()
@@ -52,6 +53,8 @@ async def savesetting(request: Request):
         config_obj = xiaomusic.getconfig()
         if data.get("password") == "******" or data.get("password", "") == "":
             data["password"] = config_obj.password
+        if data.get("emby_password") == "******" or data.get("emby_password", "") == "":
+            data["emby_password"] = config_obj.emby_password
         if data.get("llm_api_key") == "******" or data.get("llm_api_key", "") == "":
             data["llm_api_key"] = config_obj.llm_api_key
         await xiaomusic.saveconfig(data)
@@ -80,6 +83,10 @@ async def modifiysetting(request: Request):
             data["llm_api_key"] == "******" or data["llm_api_key"] == ""
         ):
             data["llm_api_key"] = config_obj.llm_api_key
+        if "emby_password" in data and (
+            data["emby_password"] == "******" or data["emby_password"] == ""
+        ):
+            data["emby_password"] = config_obj.emby_password
 
         # 更新配置
         config_obj.update_config(data)

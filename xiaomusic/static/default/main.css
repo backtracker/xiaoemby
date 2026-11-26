@@ -1370,3 +1370,83 @@ p {
   }
 }
 
+/* ==================== 与设置页统一的设计令牌 ==================== */
+/* 仅覆盖视觉层，不改动任何 DOM 结构、id 或 md.js 依赖的 class */
+:root {
+  --primary-color: #3538cd;
+  --primary-hover: #2a2db0;
+  --primary-light: #eef2ff;
+  --success-color: #067647;
+  --warning-color: #b54708;
+  --error-color: #b42318;
+  --error-hover: #912018;
+  --info-color: #3538cd;
+
+  --text-primary: #101828;
+  --text-secondary: #475467;
+  --text-tertiary: #98a2b3;
+  --text-inverse: #ffffff;
+
+  --bg-primary: #ffffff;
+  --bg-secondary: #fcfcfd;
+  --bg-tertiary: #f2f4f7;
+  --bg-page: #f6f7f9;
+
+  --border-color: #e4e7ec;
+  --border-hover: #d0d5dd;
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, .04);
+  --shadow-md: 0 1px 3px rgba(16, 24, 40, .06);
+  --shadow-lg: 0 4px 12px rgba(16, 24, 40, .08);
+  --shadow-xl: 0 4px 12px rgba(16, 24, 40, .08);
+
+  --radius-sm: 7px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+  --font-size-lg: 15px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 22px;
+}
+
+body {
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+}
+
+.player {
+  max-width: 520px;
+  box-shadow: var(--shadow-md);
+}
+
+.card-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-xl);
+  box-shadow: var(--shadow-md);
+}
+
+.card-title {
+  color: var(--text-primary);
+}
+
+.component,
+#test-result-component {
+  box-shadow: var(--shadow-lg);
+}
+
+.timer-intro {
+  margin: 0 0 var(--spacing-lg);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--primary-light);
+  color: var(--primary-color);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+}
+

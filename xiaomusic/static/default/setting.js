@@ -24,6 +24,18 @@
 })();
 
 $(function () {
+  // 左侧分区导航：滚动定位并高亮当前分区
+  $(".side-nav a").on("click", function (e) {
+    e.preventDefault();
+    const target = $(this).data("target");
+    $(".side-nav a").removeClass("on");
+    $(this).addClass("on");
+    if (target) {
+      const el = document.getElementById(target);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+
   // 遍历所有的select元素，默认选中只有1个选项的
   const autoSelectOne = () => {
     $("select").each(function () {
@@ -159,6 +171,8 @@ $(function () {
     }
 
     autoSelectOne();
+
+    renderCronRules(data.crontab_json || "[]");
   });
 
     $("#update-devices").on("click", function () {
@@ -560,4 +574,158 @@ $(function () {
 
   // 将函数暴露到全局作用域，以便在保存配置时使用
   window.getEmbyUsersConfig = getEmbyUsersConfig;
+
+  // ============ 定时开关语音口令 ============
+  const CRON_REPEAT = [
+    ["every", "每天", "*"],
+    ["weekday", "工作日", "1-5"],
+    ["monday", "每周一", "1"],
+    ["friday", "每周五", "5"],
+    ["weekend", "周末", "0,6"],
+  ];
+  const repeatLabel = (r) => {
+    const hit = CRON_REPEAT.find((x) => x[0] === r);
+    return hit ? hit[1] : "自定义";
+  };
+  const cronToUI = (expr) => {
+    const p = (expr || "").trim().split(/\s+/);
+    if (p.length !== 5) return { time: "07:30", repeat: "every" };
+    let repeat = "custom";
+    if (p[2] === "*" && p[3] === "*") {
+      const hit = CRON_REPEAT.find((x) => x[2] === p[4]);
+      if (hit) repeat = hit[0];
+    }
+    return {
+      time: String(p[1]).padStart(2, "0") + ":" + String(p[0]).padStart(2, "0"),
+      repeat: repeat,
+    };
+  };
+  const uiToCron = (time, repeat) => {
+    const parts = (time || "07:30").split(":");
+    const h = Number(parts[0]), m = Number(parts[1]);
+    const hit = CRON_REPEAT.find((x) => x[0] === repeat);
+    const dow = hit ? hit[2] : "*";
+    return `${m} ${h} * * ${dow}`;
+  };
+  const cronDeviceOptions = (selected) => {
+    let html = '<option value="">全部设备</option>';
+    $("#mi_did input.custom-checkbox").each(function () {
+      const did = $(this).val();
+      const label = $(`label[for="${did}"]`).text() || did;
+      html += `<option value="${did}" ${did === selected ? "selected" : ""}>${label}</option>`;
+    });
+    return html;
+  };
+  const cronDeviceLabel = (did) => {
+    if (!did) return "全部设备";
+    const el = $(`#mi_did input.custom-checkbox[value="${did}"]`);
+    return el.length ? ($(`label[for="${did}"]`).text() || did) : did;
+  };
+
+  let cronRules = [];
+  let cronOtherJobs = [];
+
+  function ruleFromJob(job) {
+    const ui = cronToUI(job.expression);
+    return {
+      action: (job.arg1 || "").indexOf("disable") >= 0 ? "off" : "on",
+      time: ui.time,
+      repeat: ui.repeat,
+      did: job.did || "",
+      enabled: job.enabled !== false,
+    };
+  }
+  function jobFromRule(r) {
+    return {
+      name: "set_pull_ask",
+      expression: uiToCron(r.time, r.repeat),
+      did: r.did,
+      arg1: "enable_pull_ask|" + (r.action === "on" ? "enable" : "disable"),
+      enabled: r.enabled,
+    };
+  }
+  function syncCronJson() {
+    const jobs = cronRules.map(jobFromRule).concat(cronOtherJobs);
+    $("#crontab_json").val(JSON.stringify(jobs));
+  }
+  function drawCronRules() {
+    const box = $("#cron_rules");
+    box.empty();
+    if (!cronRules.length) {
+      box.append('<div class="rule-empty">暂无规则，点击「新建规则」添加</div>');
+    }
+    cronRules.forEach((r, i) => {
+      const repOpts = CRON_REPEAT.map(
+        (x) => `<option value="${x[0]}" ${x[0] === r.repeat ? "selected" : ""}>${x[1]}</option>`
+      ).join("") + `<option value="custom" ${r.repeat === "custom" ? "selected" : ""}>自定义</option>`;
+      const actOpts = `<option value="on" ${r.action === "on" ? "selected" : ""}>开启语音口令</option><option value="off" ${r.action === "off" ? "selected" : ""}>关闭语音口令</option>`;
+      box.append(`
+        <div class="rule" data-i="${i}">
+          <div class="rule-head">
+            <div class="act ${r.action}">${r.action === "on" ? "开启" : "关闭"}</div>
+            <div class="rule-main">
+              <div class="rule-title">${repeatLabel(r.repeat)} ${r.time} · ${r.action === "on" ? "开启" : "关闭"}语音口令</div>
+              <div class="rule-meta">${cronDeviceLabel(r.did)} <span class="badge ${r.enabled ? "on" : "off"}" style="margin-left:6px">${r.enabled ? "已启用" : "已停用"}</span></div>
+            </div>
+            <div class="switch ${r.enabled ? "on" : ""}" data-cron-tog="${i}"></div>
+            <button type="button" class="btn sm" data-cron-edit="${i}">编辑</button>
+          </div>
+          <div class="rule-body">
+            <div class="grid3">
+              <div class="field"><label>动作</label><select class="cr-action">${actOpts}</select></div>
+              <div class="field"><label>触发时间</label><input type="time" class="cr-time" value="${r.time}"></div>
+              <div class="field"><label>重复</label><select class="cr-repeat">${repOpts}</select></div>
+            </div>
+            <div style="margin-top:12px"><div class="field"><label>目标设备</label><select class="cr-did">${cronDeviceOptions(r.did)}</select></div></div>
+            <div style="margin-top:14px;display:flex;gap:8px">
+              <button type="button" class="btn pri sm" data-cron-save="${i}">保存规则</button>
+              <button type="button" class="btn sm" data-cron-del="${i}">删除</button>
+            </div>
+          </div>
+        </div>`);
+    });
+    $("#cron_count").text("共 " + cronRules.length + " 条");
+    box.find("[data-cron-edit]").on("click", function () {
+      $(this).closest(".rule").toggleClass("open");
+    });
+    box.find("[data-cron-tog]").on("click", function () {
+      const i = Number($(this).data("cron-tog"));
+      cronRules[i].enabled = !cronRules[i].enabled;
+      $(this).toggleClass("on");
+      drawCronRules();
+    });
+    box.find("[data-cron-save]").on("click", function () {
+      const row = $(this).closest(".rule");
+      const i = Number($(this).data("cron-save"));
+      cronRules[i] = {
+        action: row.find(".cr-action").val(),
+        time: row.find(".cr-time").val() || "07:30",
+        repeat: row.find(".cr-repeat").val(),
+        did: row.find(".cr-did").val(),
+        enabled: cronRules[i].enabled,
+      };
+      syncCronJson();
+      drawCronRules();
+    });
+    box.find("[data-cron-del]").on("click", function () {
+      cronRules.splice(Number($(this).data("cron-del")), 1);
+      syncCronJson();
+      drawCronRules();
+    });
+    syncCronJson();
+  }
+  function renderCronRules(json) {
+    let list = [];
+    try { list = JSON.parse(json || "[]"); } catch (e) { list = []; }
+    if (!Array.isArray(list)) list = [];
+    cronOtherJobs = list.filter((j) => j.name !== "set_pull_ask");
+    cronRules = list.filter((j) => j.name === "set_pull_ask").map(ruleFromJob);
+    drawCronRules();
+  }
+  $("#cron_add").on("click", function () {
+    cronRules.push({ action: "on", time: "07:30", repeat: "every", did: "", enabled: true });
+    syncCronJson();
+    drawCronRules();
+    $("#cron_rules .rule").last().addClass("open");
+  });
 });

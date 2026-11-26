@@ -257,6 +257,9 @@ class Crontab:
             cron_list = json.loads(crontab_json)
             self.log.info(f"解析到 {len(cron_list)} 个定时任务")
             for cron in cron_list:
+                # enabled=false 的规则由设置页保存，调度器跳过
+                if cron.get("enabled") is False:
+                    continue
                 self.add_job_cron(xiaomusic, cron)
             self.log.info("crontab reload_config ok")
         except json.JSONDecodeError as e:

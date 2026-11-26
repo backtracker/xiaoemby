@@ -6,7 +6,6 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import get_type_hints
 
-from xiaomusic.utils.system_utils import validate_proxy
 
 
 # 命令匹配字典
@@ -117,12 +116,12 @@ class Config:
     hostname: str = os.getenv("XIAOMUSIC_HOSTNAME", "")
     port: int = int(os.getenv("XIAOMUSIC_PORT", "8090"))  # 监听端口
     public_port: int = int(os.getenv("XIAOMUSIC_PUBLIC_PORT", 58090))  # 歌曲访问端口
-    proxy: str = os.getenv("XIAOMUSIC_PROXY", None)
 
-    # Emby配置
+    # Emby配置：用户名密码登录换取用户 token，全链路复用
     emby_host: str = os.getenv("XIAOMUSIC_EMBY_HOST", "")
     emby_user_id: str = os.getenv("XIAOMUSIC_EMBY_USER_ID", "")  # 保留兼容旧配置
-    emby_api_key: str = os.getenv("XIAOMUSIC_EMBY_API_KEY", "")
+    emby_username: str = os.getenv("XIAOMUSIC_EMBY_USERNAME", "")
+    emby_password: str = os.getenv("XIAOMUSIC_EMBY_PASSWORD", "")
     emby_users: dict[str, EmbyUser] = field(default_factory=dict)  # 多用户配置
 
     active_cmd: str = os.getenv(
@@ -131,14 +130,12 @@ class Config:
     )
     custom_play_list_json: str = os.getenv("XIAOMUSIC_CUSTOM_PLAY_LIST_JSON", "")
 
-    key_word_dict: dict[str, str] = field(default_factory=dict)
     use_music_api: bool = (
         os.getenv("XIAOMUSIC_USE_MUSIC_API", "false").lower() == "true"
     )
     use_music_audio_id: str = os.getenv(
         "XIAOMUSIC_USE_MUSIC_AUDIO_ID", "1582971365183456177"
     )
-    use_music_id: str = os.getenv("XIAOMUSIC_USE_MUSIC_ID", "355454500")
     log_file: str = os.getenv("XIAOMUSIC_LOG_FILE", "xiaoemby.log")
     # 模糊搜索匹配的最低相似度阈值
     fuzzy_match_cutoff: float = float(os.getenv("XIAOMUSIC_FUZZY_MATCH_CUTOFF", "0.6"))
@@ -150,12 +147,6 @@ class Config:
     enable_config_example: bool = False
 
 
-    keywords_play: str = os.getenv("XIAOMUSIC_KEYWORDS_PLAY", "播放歌曲,放歌曲")
-    keywords_singer_play: str = os.getenv("XIAOMUSIC_KEYWORDS_SINGER_PLAY", "播放歌手")
-    keywords_stop: str = os.getenv("XIAOMUSIC_KEYWORDS_STOP", "关机,暂停,停止,停止播放")
-    keywords_playlist: str = os.getenv(
-        "XIAOMUSIC_KEYWORDS_PLAYLIST", "播放列表,播放歌单"
-    )
     enable_force_stop: bool = (
         os.getenv("XIAOMUSIC_ENABLE_FORCE_STOP", "false").lower() == "true"
     )
@@ -177,10 +168,6 @@ class Config:
 
     get_ask_by_mina: bool = (
         os.getenv("XIAOMUSIC_GET_ASK_BY_MINA", "false").lower() == "true"
-    )
-
-    recently_added_playlist_len: int = int(
-        os.getenv("XIAOMUSIC_RECENTLY_ADDED_PLAYLIST_LEN", "50")
     )
 
     # edge-tts 语音角色
@@ -212,28 +199,12 @@ class Config:
     # 探索配额比例（discover 意图下留多少比例的「没听过」曲目）
     explore_ratio: float = float(os.getenv("XIAOMUSIC_EXPLORE_RATIO", "0.15"))
 
-    def append_keyword(self, keys, action):
-        for key in keys.split(","):
-            if key:
-                self.key_word_dict[key] = action
-
-
-
     def init(self):
-        # 重置为默认空字典
-        self.key_word_dict = {}
-        self.append_keyword(self.keywords_play, "play")
-        self.append_keyword(self.keywords_singer_play, "singer_play")
-        self.append_keyword(self.keywords_stop, "stop")
-        self.append_keyword(self.keywords_playlist, "play_music_list")
-
         # 转换数据
         self._active_cmd_arr = self.active_cmd.split(",") if self.active_cmd else []
         self._exclude_dirs_set = set()
 
     def __post_init__(self) -> None:
-        if self.proxy:
-            validate_proxy(self.proxy)
         if self.hostname:
             if not self.hostname.startswith(("http://", "https://")):
                 self.hostname = f"http://{self.hostname}"  # 默认 http

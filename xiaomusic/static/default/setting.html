@@ -4,23 +4,18 @@
 <head>
     <link rel="icon" href="./favicon.ico" />
     <meta name="viewport" content="width=device-width" />
-    <title>小爱音箱操控面板</title>
-    <!-- 预加载字体文件，减少加载延迟 -->
+    <title>XiaoEmby 设置</title>
     <link rel="preload" href="./materialicons.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="./materialiconsoutlined.woff2" as="font" type="font/woff2" crossorigin>
     <script src="./jquery-3.7.1.min.js?version=1771327223"></script>
     <script src="./setting.js?version=1771327223"></script>
     <link rel="stylesheet" type="text/css" href="./setting.css?version=1771327223" />
-
-
 </head>
 
 <body>
-    <div class="setting-header" role="banner">
+    <header class="setting-header" role="banner">
         <div class="header-inner">
-            <h2>
-                <span>小爱音箱设置面板</span>
-            </h2>
+            <h2><span>XiaoEmby 设置</span></h2>
             <div class="header-buttons">
                 <button onclick="location.href = '/static/default/index.html'" aria-label="返回首页">
                     <span class="material-icons" aria-hidden="true">home</span>
@@ -32,228 +27,138 @@
                 </button>
             </div>
         </div>
-    </div>
+    </header>
 
-    <div class="setting-container" id="setting" role="main">
-        <div class="setting-card setting-panel">
-            <div class="card-content">
-                <label for="mi_did">*勾选设备(至少勾选1个):</label>
-                <button class="option-inline mini-button" id="update-devices">获取设备列表(没自动更新时使用)</button>
-                <div id="mi_did" class="device-selection"></div>
-            </div>
-        </div>
+    <div class="layout" id="setting" role="main">
+        <nav class="side-nav" aria-label="设置分类">
+            <a class="on" data-target="sec-emby" href="#sec-emby"><span class="dot"></span>Emby 服务</a>
+            <a data-target="sec-device" href="#sec-device"><span class="dot"></span>小爱设备</a>
+            <a data-target="sec-voice" href="#sec-voice"><span class="dot"></span>语音交互</a>
+            <a data-target="sec-playback" href="#sec-playback"><span class="dot"></span>播放与搜索</a>
+            <a data-target="sec-ai" href="#sec-ai"><span class="dot"></span>AI 今日推荐</a>
+            <a data-target="sec-system" href="#sec-system"><span class="dot"></span>系统</a>
+            <a data-target="sec-cron" href="#sec-cron"><span class="dot"></span>定时开关语音口令</a>
+            <div class="nav-sep"></div>
+            <a data-target="sec-operations" href="#sec-operations"><span class="dot"></span>功能操作</a>
+        </nav>
 
-        <div class="setting-card setting-panel">
-            <h3 class="card-title">基础设置</h3>
-            <div class="card-content">
-                <div class="rows">
-                    <div class="form-item">
-                        <label for="account">*小米账号:</label>
+        <main class="content">
+            <!-- ============ 1. Emby 服务 ============ -->
+            <section class="panel" id="sec-emby">
+                <h2><span class="num">1</span>Emby 服务</h2>
+                <p class="desc">播放上报、搜索与拉流统一使用用户登录 token。用户 ID 由登录接口自动获取。</p>
+
+                <div class="field">
+                    <label>服务器地址</label>
+                    <div class="grid3">
+                        <select id="emby_protocol">
+                            <option value="http">http</option>
+                            <option value="https" selected>https</option>
+                        </select>
+                        <input id="emby_host_input" type="text" placeholder="主机地址" />
+                        <input id="emby_port" type="number" placeholder="端口" />
+                    </div>
+                </div>
+
+                <div class="grid2 mt">
+                    <div class="field">
+                        <label for="emby_username">Emby 用户名</label>
+                        <input id="emby_username" type="text" placeholder="登录 Emby 的账号" />
+                    </div>
+                    <div class="field">
+                        <label for="emby_password">Emby 密码</label>
+                        <input id="emby_password" type="password" placeholder="用于换取用户 token" />
+                        <div class="hint">日志与接口回显均脱敏</div>
+                    </div>
+                </div>
+
+                <div class="note info">
+                    一处登录、全链路复用：播放上报、搜索/收藏、音箱拉流；token 失效时自动重新登录。
+                    建议使用非管理员专用账号以降低 token 泄露的影响面。
+                </div>
+
+                <details class="adv">
+                    <summary>多用户映射（可选）</summary>
+                    <div class="body">
+                        <p class="hint">为语音指令中的别名指定 Emby 用户 ID，搜索和收藏按用户分流。</p>
+                        <div id="emby_users_container"></div>
+                        <button type="button" id="add_emby_user" class="btn sm">
+                            <span class="material-icons" aria-hidden="true">add</span> 添加用户
+                        </button>
+                    </div>
+                </details>
+            </section>
+
+            <!-- ============ 2. 小爱设备 ============ -->
+            <section class="panel" id="sec-device">
+                <h2><span class="num">2</span>小爱设备</h2>
+                <p class="desc">小米账号、设备选择与型号兼容设置。</p>
+
+                <div class="grid2">
+                    <div class="field">
+                        <label for="account">*小米账号</label>
                         <input id="account" type="text" placeholder="填写小米登录账号" aria-required="true" />
                     </div>
-
-                    <div class="form-item">
-                        <label for="password">*小米密码:</label>
+                    <div class="field">
+                        <label for="password">*小米密码</label>
                         <input id="password" type="password" placeholder="填写小米登录密码" aria-required="true" />
                     </div>
                 </div>
 
-                <!-- 公共配置项 -->
-                <div class="rows" style="margin-top: 20px">
-                    <div class="form-item">
-                            <label class="setting-label">*NAS地址:<span class="tooltip-icon" data-tooltip="局域网访问时填写局域网IP和端口；如需外网访问，请先在本地配置Nginx反向代理，然后填写代理地址">?</span>
-                            </label>
-                            <div style="display: flex; align-items: center; gap: 5px;">
-                                <select id="protocol" style="width: auto;">
-                                    <option value="http" selected>http</option>
-                                    <option value="https">https</option>
+                <div class="field mt">
+                    <label>*勾选设备（至少勾选 1 个）</label>
+                    <button class="btn sm" id="update-devices" type="button">获取设备列表（没自动更新时使用）</button>
+                    <div id="mi_did" class="device-selection"></div>
+                </div>
+
+                <details class="adv">
+                    <summary>型号兼容与分组</summary>
+                    <div class="body">
+                        <div class="grid2">
+                            <div class="field">
+                                <label for="use_music_api">型号兼容模式</label>
+                                <select id="use_music_api">
+                                    <option value="true">true</option>
+                                    <option value="false" selected>false</option>
                                 </select>
-                                <span>://</span>
-                                <input id="host" type="text" placeholder="填写主机地址" style="flex: 1;" aria-required="true" />
-                                <span>:</span>
-                                <input id="port" type="number" placeholder="填写端口" style="width: 100px;" aria-required="true" />
+                            </div>
+                            <div class="field">
+                                <label for="use_music_audio_id">触屏版显示歌曲 ID</label>
+                                <input id="use_music_audio_id" type="text" value="1582971365183456177" />
                             </div>
                         </div>
-
-                    <!-- Emby配置 -->
-                    <div class="form-item">
-                        <label for="emby_host">Emby服务器地址:</label>
-                        <div style="display: flex; align-items: center; gap: 5px;">
-                            <select id="emby_protocol" style="width: auto;">
-                                <option value="http" selected>http</option>
-                                <option value="https">https</option>
-                            </select>
-                            <span>://</span>
-                            <input id="emby_host_input" type="text" placeholder="填写主机地址" style="flex: 1;" />
-                            <span>:</span>
-                            <input id="emby_port" type="number" placeholder="填写端口" style="width: 100px;" />
+                        <div class="field mt">
+                            <label for="group_list">设备分组（不推荐，声音不同步）</label>
+                            <input id="group_list" type="text" placeholder="did1:组名1,did2:组名1" />
+                            <div class="hint">分组播放可能导致声音不同步，普通场景留空即可。</div>
                         </div>
                     </div>
+                </details>
+            </section>
 
-                    <div class="form-item">
-                        <label for="emby_user_id">Emby用户ID（兼容旧配置）:</label>
-                        <input id="emby_user_id" type="text" value="" placeholder="请输入Emby用户ID" />
-                    </div>
+            <!-- ============ 3. 语音交互 ============ -->
+            <section class="panel" id="sec-voice">
+                <h2><span class="num">3</span>语音交互</h2>
+                <p class="desc">指令白名单、对话记录获取与播报音色。</p>
 
-                    <div class="form-item">
-                        <label for="emby_api_key">Emby API Key:</label>
-                        <input id="emby_api_key" type="text" value="" placeholder="请输入Emby API Key" />
-                    </div>
-
-                    <!-- 多用户配置 -->
-                    <div class="form-item">
-                        <label>Emby多用户配置:</label>
-                        <div id="emby_users_container" style="margin-top: 10px;">
-                            <!-- 动态生成的用户配置项 -->
-                        </div>
-                        <button type="button" id="add_emby_user" class="mini-button" style="margin-top: 10px;">
-                            <span class="material-icons" style="font-size: 16px; vertical-align: middle;">add</span>
-                            添加用户
-                        </button>
-                    </div>
-
-
-                </div>
-            </div>
-        </div>
-
-        <div class="advanced-config-toggle" id="advancedConfigToggle" role="button" aria-expanded="false"
-            aria-controls="advancedConfigContent" tabindex="0">
-            <span>⚠️</span>
-            <span class="advanced-config-toggle-text">以下为高级配置，请谨慎修改，错误配置可能影响系统运行</span>
-            <span class="advanced-config-toggle-icon">▼</span>
-        </div>
-
-        <div class="advanced-config-content" id="advancedConfigContent">
-            <div class="config-tabs" role="tablist" aria-label="高级配置分类">
-                <button type="button" class="config-tab-button active" data-tab="filepath" role="tab" aria-selected="true" aria-controls="tab-filepath">文件路径</button>
-                <button type="button" class="config-tab-button" data-tab="playback" role="tab" aria-selected="false" aria-controls="tab-playback">播放控制</button>
-                <button type="button" class="config-tab-button" data-tab="search" role="tab" aria-selected="false" aria-controls="tab-search">搜索匹配</button>
-                <button type="button" class="config-tab-button" data-tab="audio" role="tab" aria-selected="false" aria-controls="tab-audio">音频处理</button>
-                <button type="button" class="config-tab-button" data-tab="tts" role="tab" aria-selected="false" aria-controls="tab-tts">语音TTS</button>
-                <button type="button" class="config-tab-button" data-tab="recommend" role="tab" aria-selected="false" aria-controls="tab-recommend">AI推荐</button>
-                <button type="button" class="config-tab-button" data-tab="voicecmd" role="tab" aria-selected="false" aria-controls="tab-voicecmd">语音命令</button>
-                <button type="button" class="config-tab-button" data-tab="device" role="tab" aria-selected="false" aria-controls="tab-device">设备对话</button>
-                <button type="button" class="config-tab-button" data-tab="other" role="tab" aria-selected="false" aria-controls="tab-other">其他</button>
-            </div>
-            <div class="config-tab-panels">
-                <div class="config-tab-content setting-panel active" id="tab-filepath" role="tabpanel">
-                    <div class="card-content">
-                    <div class="rows">
-
-
-                        <label for="conf_path">配置文件目录:</label>
-                        <input id="conf_path" type="text" />
-
-                        <label for="cache_dir">缓存文件目录:</label>
-                        <input id="cache_dir" type="text" value="music/cache" />
-
-                        <label for="temp_path">临时文件目录:</label>
-                        <input id="temp_path" type="text" value="music/tmp" />
-
-
-                    </div>
-                    </div>
+                <div class="field">
+                    <label for="active_cmd">允许的语音指令（逗号分隔）</label>
+                    <textarea id="active_cmd" rows="3">play,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,gen_music_list,add_to_favorites,del_from_favorites,online_play,singer_play,daily_recommend,daily_recommend_renew,snooze_current</textarea>
                 </div>
 
-                <div class="config-tab-content setting-panel" id="tab-playback" role="tabpanel">
-                    <div class="card-content">
-                    <div class="rows">
-                        <label for="delay_sec">下一首歌延迟播放秒数(支持负数):</label>
-                        <input id="delay_sec" type="number" value="0" />
-
-                        <label for="continue_play">启用继续播放(可能导致兼容性问题):</label>
-                        <select id="continue_play">
-                            <option value="true">true</option>
-                            <option value="false" selected>false</option>
-                        </select>
-
-                        <label for="use_music_api">型号兼容模式:</label>
-                        <select id="use_music_api">
-                            <option value="true">true</option>
-                            <option value="false" selected>false</option>
-                        </select>
-
-                        <label for="use_music_audio_id">触屏版显示歌曲ID:</label>
-                        <input id="use_music_audio_id" type="text" value="1582971365183456177" />
-
-                        <label for="use_music_id">触屏版显示歌曲分段ID:</label>
-                        <input id="use_music_id" type="text" value="355454500" />
-
-                        <label for="active_cmd">允许唤醒的命令:</label>
-                        <input id="active_cmd" type="text"
-                            value="play,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,gen_music_list,add_to_favorites,del_from_favorites,singer_play" />
-                    </div>
-                    </div>
-                </div>
-
-                <div class="config-tab-content setting-panel" id="tab-search" role="tabpanel">
-                    <div class="card-content">
-                    <div class="rows">
-                        <label for="fuzzy_match_cutoff">模糊匹配阈值(0.1~0.9):</label>
-                        <input id="fuzzy_match_cutoff" type="number" value="0.6" />
-
-                        <label for="enable_fuzzy_match">开启模糊搜索:</label>
-                        <select id="enable_fuzzy_match">
-                            <option value="true" selected>true</option>
-                            <option value="false">false</option>
-                        </select>
-                    </div>
-                    </div>
-                </div>
-
-                <div class="config-tab-content setting-panel" id="tab-audio" role="tabpanel">
-                    <div class="card-content">
-                    <div class="rows">
-                        <label for="get_duration_type">获取时长方式:</label>
-                        <select id="get_duration_type">
-                            <option value="ffprobe" selected>ffprobe</option>
-                        </select>
-
-                        <label for="loudnorm">均衡歌曲音量大小(loudnorm滤镜):</label>
-                        <input id="loudnorm" type="text" placeholder="loudnorm=I=-14:TP=-1.5:LRA=6" />
-
-                        <label for="remove_id3tag">去除MP3 ID3v2和填充:</label>
-                        <select id="remove_id3tag">
-                            <option value="true">true</option>
-                            <option value="false" selected>false</option>
-                        </select>
-
-                        <label for="convert_to_mp3">转换为MP3:</label>
-                        <select id="convert_to_mp3">
-                            <option value="true">true</option>
-                            <option value="false" selected>false</option>
-                        </select>
-
-                        <label for="enable_save_tag">启用ID3标签写入文件:</label>
-                        <select id="enable_save_tag">
-                            <option value="true">true</option>
-                            <option value="false" selected>false</option>
-                        </select>
-                    </div>
-                    </div>
-                </div>
-
-                <div class="config-tab-content setting-panel" id="tab-tts" role="tabpanel">
-                    <div class="card-content">
-                    <div class="rows">
-                        <label for="edge_tts_voice">Edge-TTS 语音角色:</label>
+                <div class="grid2 mt">
+                    <div class="field">
+                        <label for="edge_tts_voice">播报音色</label>
                         <select id="edge_tts_voice">
                             <option value="">不使用(默认)</option>
                             <option value="zh-CN-XiaoxiaoNeural">晓晓 (女声,温柔)</option>
-                            <option value="zh-CN-XiaoyiNeural" selected>
-                                晓伊 (女声,活泼)
-                            </option>
+                            <option value="zh-CN-XiaoyiNeural" selected>晓伊 (女声,活泼)</option>
                             <option value="zh-CN-YunjianNeural">云健 (男声,成熟)</option>
                             <option value="zh-CN-YunxiNeural">云希 (男声,阳光)</option>
                             <option value="zh-CN-YunxiaNeural">云夏 (男声,少年)</option>
                             <option value="zh-CN-YunyangNeural">云扬 (男声,新闻)</option>
-                            <option value="zh-CN-liaoning-XiaobeiNeural">
-                                晓北 (女声,东北)
-                            </option>
-                            <option value="zh-CN-shaanxi-XiaoniNeural">
-                                晓妮 (女声,陕西)
-                            </option>
+                            <option value="zh-CN-liaoning-XiaobeiNeural">晓北 (女声,东北)</option>
+                            <option value="zh-CN-shaanxi-XiaoniNeural">晓妮 (女声,陕西)</option>
                             <option value="zh-HK-HiuGaaiNeural">曉佳 (女声,粤语)</option>
                             <option value="zh-HK-HiuMaanNeural">曉曼 (女声,粤语)</option>
                             <option value="zh-HK-WanLungNeural">雲龍 (男声,粤语)</option>
@@ -261,155 +166,245 @@
                             <option value="zh-TW-YunJheNeural">雲哲 (男声,台湾)</option>
                             <option value="zh-TW-HsiaoYuNeural">曉雨 (女声,台湾)</option>
                         </select>
-
-                        <label for="stop_tts_msg">停止提示音:</label>
-                        <input id="stop_tts_msg" type="text" value="收到,再见" />
-
-
                     </div>
+                    <div class="field">
+                        <label for="stop_tts_msg">停止提示音</label>
+                        <input id="stop_tts_msg" type="text" value="收到,再见" />
                     </div>
                 </div>
 
-                <div class="config-tab-content setting-panel" id="tab-recommend" role="tabpanel">
-                    <div class="card-content">
-                    <div class="rows">
-                        <label for="enable_daily_recommend">启用今日推荐:</label>
-                        <select id="enable_daily_recommend">
+                <details class="adv">
+                    <summary>对话记录获取</summary>
+                    <div class="body grid2">
+                        <div class="field">
+                            <label for="enable_pull_ask">获取设备对话记录</label>
+                            <select id="enable_pull_ask">
+                                <option value="true">true</option>
+                                <option value="false" selected>false</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="pull_ask_sec">拉取间隔（秒）</label>
+                            <input id="pull_ask_sec" type="number" value="1" />
+                        </div>
+                        <div class="field">
+                            <label for="get_ask_by_mina">特殊型号走 MiNA 获取</label>
+                            <select id="get_ask_by_mina">
+                                <option value="true">true</option>
+                                <option value="false" selected>false</option>
+                            </select>
+                        </div>
+                    </div>
+                </details>
+            </section>
+
+            <!-- ============ 4. 播放与搜索 ============ -->
+            <section class="panel" id="sec-playback">
+                <h2><span class="num">4</span>播放与搜索</h2>
+                <p class="desc">切歌节奏、续播行为与搜索匹配策略。</p>
+
+                <div class="grid2">
+                    <div class="field">
+                        <label for="continue_play">启用继续播放</label>
+                        <select id="continue_play">
+                            <option value="true">true</option>
                             <option value="false" selected>false</option>
-                            <option value="true">true</option>
                         </select>
+                        <div class="hint">可能导致部分型号兼容性问题</div>
+                    </div>
+                    <div class="field">
+                        <label for="enable_force_stop">强制停止</label>
+                        <select id="enable_force_stop">
+                            <option value="true">true</option>
+                            <option value="false" selected>false</option>
+                        </select>
+                        <div class="hint">切歌时先 stop 再播放</div>
+                    </div>
+                </div>
 
-                        <label for="llm_endpoint">LLM API 地址 (OpenAI 兼容):</label>
+                <div class="grid2 mt">
+                    <div class="field">
+                        <label for="delay_sec">下一首延迟（秒，支持负数）</label>
+                        <input id="delay_sec" type="number" value="0" />
+                    </div>
+                    <div class="field">
+                        <label for="enable_fuzzy_match">开启模糊搜索</label>
+                        <select id="enable_fuzzy_match">
+                            <option value="true" selected>true</option>
+                            <option value="false">false</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="field mt">
+                    <label for="fuzzy_match_cutoff">模糊匹配阈值（0.1 ~ 0.9）</label>
+                    <input id="fuzzy_match_cutoff" type="number" min="0.1" max="0.9" step="0.05" value="0.6" />
+                </div>
+            </section>
+
+            <!-- ============ 5. AI 今日推荐 ============ -->
+            <section class="panel" id="sec-ai">
+                <h2><span class="num">5</span>AI 今日推荐</h2>
+                <p class="desc">按天生成推荐歌单，使用 OpenAI 兼容的 LLM 接口。</p>
+
+                <div class="field">
+                    <label for="enable_daily_recommend">启用今日推荐</label>
+                    <select id="enable_daily_recommend">
+                        <option value="false" selected>false</option>
+                        <option value="true">true</option>
+                    </select>
+                </div>
+
+                <div class="grid2 mt">
+                    <div class="field">
+                        <label for="llm_endpoint">LLM API 地址</label>
                         <input id="llm_endpoint" type="text" placeholder="http://127.0.0.1:8080/v1" />
-
-                        <label for="llm_api_key">LLM API Key:</label>
-                        <input id="llm_api_key" type="password" placeholder="sk-..." />
-
-                        <label for="llm_model">模型名称:</label>
+                    </div>
+                    <div class="field">
+                        <label for="llm_model">模型名称</label>
                         <input id="llm_model" type="text" placeholder="qwen-plus" />
-
-                        <label for="daily_recommend_count">推荐歌曲数量:</label>
+                    </div>
+                    <div class="field">
+                        <label for="llm_api_key">LLM API Key</label>
+                        <input id="llm_api_key" type="password" placeholder="sk-..." />
+                    </div>
+                    <div class="field">
+                        <label for="daily_recommend_count">推荐歌曲数量</label>
                         <input id="daily_recommend_count" type="number" value="20" />
-
-                        <label for="llm_supports_schema">LLM 支持 json_schema:</label>
-                        <select id="llm_supports_schema">
-                            <option value="false" selected>false (DeepSeek 等)</option>
-                            <option value="true">true</option>
-                        </select>
-
-                        <label for="llm_max_tokens">LLM 输出预算 (max_tokens):</label>
-                        <input id="llm_max_tokens" type="number" min="1" step="100" value="6000" />
-                        <small>推理模型思考会占用预算；太小会导致今日推荐生成失败并回退本地混歌</small>
-
-                        <label for="explore_ratio">探索比例 (0~1):</label>
+                    </div>
+                    <div class="field">
+                        <label for="explore_ratio">探索比例（0 ~ 1）</label>
                         <input id="explore_ratio" type="number" min="0" max="1" step="0.05" value="0.15" />
                     </div>
+                    <div class="field">
+                        <label for="llm_max_tokens">输出预算（max_tokens）</label>
+                        <input id="llm_max_tokens" type="number" min="1" step="100" value="6000" />
                     </div>
                 </div>
 
-                <div class="config-tab-content setting-panel" id="tab-voicecmd" role="tabpanel">
-                    <div class="card-content">
-                    <div class="rows">
+                <div class="field mt">
+                    <label for="llm_supports_schema">LLM 支持 json_schema</label>
+                    <select id="llm_supports_schema">
+                        <option value="false" selected>false (DeepSeek 等)</option>
+                        <option value="true">true</option>
+                    </select>
+                    <div class="hint">推理模型思考会占用预算；太小会导致生成失败并回退本地混歌</div>
+                </div>
 
-
-                        <label for="keywords_play">播放歌曲口令:</label>
-                        <input id="keywords_play" type="text" value="播放歌曲,放歌曲" />
-
-                        <label for="keywords_playlist">播放列表口令:</label>
-                        <input id="keywords_playlist" type="text" value="播放列表,播放歌单" />
-
-                        <label for="keywords_stop">停止口令:</label>
-                        <input id="keywords_stop" type="text" value="关机,暂停,停止,停止播放" />
-
-                        <label for="keywords_singer_play">播放歌手口令(会搜索歌手并创建歌单):</label>
-                        <input id="keywords_singer_play" type="text" value="播放歌手" />
+                <details class="adv">
+                    <summary>时区</summary>
+                    <div class="body">
+                        <div class="field">
+                            <label for="timezone">时区</label>
+                            <input id="timezone" type="text" value="Asia/Shanghai" />
+                            <div class="hint">定时任务按此时区计算触发时间</div>
+                        </div>
                     </div>
+                </details>
+            </section>
+
+            <!-- ============ 6. 系统 ============ -->
+            <section class="panel" id="sec-system">
+                <h2><span class="num">6</span>系统</h2>
+                <p class="desc">文件路径、日志与服务地址。</p>
+
+                <div class="grid2">
+                    <div class="field">
+                        <label for="conf_path">配置文件目录</label>
+                        <input id="conf_path" type="text" value="conf" />
+                    </div>
+                    <div class="field">
+                        <label for="cache_dir">缓存目录</label>
+                        <input id="cache_dir" type="text" value="cache" />
+                    </div>
+                    <div class="field">
+                        <label for="temp_path">临时目录</label>
+                        <input id="temp_path" type="text" value="temp" />
+                    </div>
+                    <div class="field">
+                        <label for="log_file">日志路径</label>
+                        <input id="log_file" type="text" value="xiaoemby.log" />
                     </div>
                 </div>
 
-
-
-                <div class="config-tab-content setting-panel" id="tab-device" role="tabpanel">
-                    <div class="card-content">
-                    <div class="rows">
-                        <label for="group_list">设备分组配置（不推荐，声音不同步）:<a href="https://xdocs.hanxi.cc/issues/366.html"
-                                target="_blank">文档</a></label>
-                        <input id="group_list" type="text" placeholder="did1:组名1,did2:组名1,did3:组名2" />
-
-                        <label for="enable_pull_ask">获取对话记录:</label>
-                        <select id="enable_pull_ask">
-                            <option value="true">true</option>
-                            <option value="false selected">false</option>
+                <div class="field mt">
+                    <label>*NAS 地址（对外歌曲访问地址）</label>
+                    <div class="grid3">
+                        <select id="protocol">
+                            <option value="http">http</option>
+                            <option value="https" selected>https</option>
                         </select>
-
-                        <label for="pull_ask_sec">获取对话记录间隔(秒):</label>
-                        <input id="pull_ask_sec" type="number" value="1" />
-
-                        <label for="get_ask_by_mina">特殊型号获取对话记录:</label>
-                        <select id="get_ask_by_mina">
-                            <option value="true">true</option>
-                            <option value="false" selected>false</option>
-                        </select>
+                        <input id="host" type="text" placeholder="主机地址" aria-required="true" />
+                        <input id="port" type="number" placeholder="端口" aria-required="true" />
                     </div>
-                    </div>
+                    <div class="hint">局域网填 IP 和端口；外网访问需先配置反向代理</div>
                 </div>
 
-
-
-                <div class="config-tab-content setting-panel" id="tab-other" role="tabpanel">
-                    <div class="card-content">
-                    <div class="rows">
-                        <label for="verbose">是否开启调试日志:</label>
+                <div class="grid2 mt">
+                    <div class="field">
+                        <label for="verbose">开启调试日志</label>
                         <select id="verbose">
                             <option value="true">true</option>
                             <option value="false" selected>false</option>
                         </select>
-
-                        <label for="log_file">日志路径:</label>
-                        <input id="log_file" type="text" value="xiaoemby.log" />
                     </div>
+                    <div class="field">
+                        <label for="enable_auto_clean_temp">自动清理临时目录</label>
+                        <select id="enable_auto_clean_temp">
+                            <option value="true" selected>true</option>
+                            <option value="false">false</option>
+                        </select>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
+            </section>
 
-    <div class="setting-footer">
-        <div class="button-section">
-            <div class="section-header collapsed" id="operationToggle">
-                <h3 class="button-section-title">功能操作</h3>
-                <span class="section-toggle-icon">▼</span>
-            </div>
-            <div class="section-content collapsed" id="operationContent">
-                <div class="button-grid">
+            <!-- ============ 定时开关语音口令 ============ -->
+            <section class="panel" id="sec-cron">
+                <h2><span class="num">7</span>定时开关语音口令</h2>
+                <p class="desc">只控制语音口令的开启与关闭，不涉及播报、播放歌单等任何播放动作。</p>
 
-                    <button id="clear_cache">
-                        <span class="material-icons">delete_sweep</span>
-                        <span>清空缓存</span>
+                <div class="note info" style="margin-top:0">
+                    <b>语音口令</b>指小爱音箱的对话记录获取。开启后，XiaoEmby 会按间隔从设备拉取对话记录，把你说的话当成控制指令；关闭后不再拉取，避免误触发。
+                </div>
+                <div class="note warn">
+                    <b>定时任务</b>让这个开关按时间自动切换，例如早上 07:30 开启、晚上 22:30 关闭。<b>它只改这一个开关</b>，不会播放音乐、不会播报、不会改音量。
+                </div>
+
+                <div class="section-bar">
+                    <div><b>定时规则</b><span class="hint" id="cron_count" style="margin-left:8px"></span></div>
+                    <button type="button" class="btn pri sm" id="cron_add">+ 新建规则</button>
+                </div>
+
+                <div id="cron_rules" class="cron-rules"></div>
+                <textarea id="crontab_json" style="display:none"></textarea>
+
+                <div class="note info">
+                    未配置规则的时段，设备保持上一次状态（开机时默认关闭）。开启和关闭建议成对配置。
+                </div>
+            </section>
+
+            <!-- ============ 功能操作 ============ -->
+            <section class="panel" id="sec-operations">
+                <h2><span class="num">·</span>功能操作</h2>
+                <p class="desc">清缓存、清理临时目录与下载日志。</p>
+                <div class="ops">
+                    <button id="clear_cache" class="btn">
+                        <span class="material-icons" aria-hidden="true">delete_sweep</span> 清空缓存
                     </button>
-                    <button id="cleantempdir">
-                        <span class="material-icons">folder_delete</span>
-                        <span>清空临时目录</span>
+                    <button id="cleantempdir" class="btn">
+                        <span class="material-icons" aria-hidden="true">folder_delete</span> 清空临时目录
                     </button>
-                    <a href="/downloadlog">
-                        <button>
-                            <span class="material-icons">download</span>
-                            <span>下载日志文件</span>
-                        </button>
+                    <a href="/downloadlog" class="btn">
+                        <span class="material-icons" aria-hidden="true">download</span> 下载日志文件
                     </a>
                 </div>
-            </div>
-        </div>
+            </section>
 
-
-
+            <footer class="page-footer">
+                Powered by <a href="https://github.com/backtracker/xiaoemby" target="_blank">XiaoEmby</a>
+            </footer>
+        </main>
     </div>
-    <footer>
-        <p>
-            Powered by
-            <a href="https://github.com/backtracker/xiaoemby" target="_blank">XiaoEmby</a>
-        </p>
-    </footer>
 </body>
 
 </html>

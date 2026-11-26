@@ -80,18 +80,7 @@ class XiaoMusic:
         self.log.info("定时任务配置重新加载完成")
 
         # 初始化 EmbyUtil
-        try:
-            self.emby_util = EmbyUtil(
-                host=self.config.emby_host,
-                user_id=self.config.emby_user_id,
-                api_key=self.config.emby_api_key,
-                log=self.log,
-                version=__version__
-            )
-            self.log.info("EmbyUtil initialized successfully")
-        except Exception as e:
-            self.log.error(f"Failed to initialize EmbyUtil: {e}")
-            self.emby_util = None
+        self._init_emby_util()
 
         # 初始化音乐库管理器（在配置准备好之后）
         self.music_library = MusicLibrary(
@@ -726,7 +715,6 @@ class XiaoMusic:
         self.log.info(f"update_config_from_setting ok. data:{debug_config}")
 
         self.log.info("语音控制已启动, 支持播放、暂停、停止、下一首、上一首等命令")
-        self.log.debug(f"key_word_dict: {self.config.key_word_dict}")
 
 
 
@@ -735,10 +723,29 @@ class XiaoMusic:
             self.crontab.reload_config(self)
 
     # 重新初始化
+    def _init_emby_util(self):
+        """初始化/重建 EmbyUtil（配置变更后重新登录）"""
+        try:
+            self.emby_util = EmbyUtil(
+                host=self.config.emby_host,
+                user_id=self.config.emby_user_id,
+                log=self.log,
+                version=__version__,
+                username=self.config.emby_username,
+                password=self.config.emby_password,
+            )
+            self.log.info("EmbyUtil initialized successfully")
+        except Exception as e:
+            self.log.error(f"Failed to initialize EmbyUtil: {e}")
+            self.emby_util = None
+        if hasattr(self, "music_library") and self.music_library:
+            self.music_library.emby_util = self.emby_util
+
     async def reinit(self):
         for handler in self.log.handlers:
             handler.close()
         self.setup_logger()
+        self._init_emby_util()
         await self.auth_manager.init_all_data()
         self.music_library.gen_all_music_list()
         self.update_all_playlist()
