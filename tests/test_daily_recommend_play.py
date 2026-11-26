@@ -83,7 +83,8 @@ def test_duplicate_command_generates_once_and_tts_once(monkeypatch):
 
     assert x.generate_calls == 1
     assert second_result is None
-    assert x.tts_calls == ["今日推荐歌单生成中，请稍候", "今天的理由。开场：熟悉开场"]
+    # 只在生成完成时播「生成中」提示；推荐理由与串联语不再播报
+    assert x.tts_calls == ["今日推荐歌单生成中，请稍候"]
     assert len(x.play_calls) == 1
     # 重复口令被去重，不应再次触发 force stop
     assert x.stop_calls == ["force_stop"]
@@ -99,7 +100,8 @@ def test_cache_hit_skips_generating_prompt(monkeypatch):
 
     asyncio.run(x.daily_recommend("did1"))
 
-    assert x.tts_calls == ["今天的理由。开场：熟悉开场"]
+    # 命中缓存、生成完成后不再播报推荐理由
+    assert x.tts_calls == []
 
 
 def test_guard_released_after_success_and_failure(monkeypatch):

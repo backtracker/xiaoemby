@@ -72,6 +72,11 @@
                     </div>
                 </div>
 
+                <div class="login-test" style="margin-top:14px">
+                    <button type="button" class="btn sm" id="emby_test_login">测试登录</button>
+                    <span class="hint" id="emby_test_result">测试当前填写的账号密码能否登录 Emby</span>
+                </div>
+
                 <div class="note info">
                     一处登录、全链路复用：播放上报、搜索/收藏、音箱拉流；token 失效时自动重新登录。
                     建议使用非管理员专用账号以降低 token 泄露的影响面。
@@ -377,6 +382,17 @@
 
                 <div id="cron_rules" class="cron-rules"></div>
                 <textarea id="crontab_json" style="display:none"></textarea>
+
+                <div class="section-bar">
+                    <div><b>快捷定时关机</b><span class="hint" style="margin-left:8px">临时让设备 N 分钟后停止，不改变定时规则</span></div>
+                </div>
+                <div class="ops">
+                    <select id="shutdown_did" style="width:auto;min-width:180px"></select>
+                    <button type="button" class="btn" data-shutdown="10分钟后关机">10 分钟后关机</button>
+                    <button type="button" class="btn" data-shutdown="30分钟后关机">30 分钟后关机</button>
+                    <button type="button" class="btn" data-shutdown="60分钟后关机">60 分钟后关机</button>
+                </div>
+                <div class="hint" id="shutdown_result" style="margin-top:8px"></div>
 
                 <div class="note info">
                     未配置规则的时段，设备保持上一次状态（开机时默认关闭）。开启和关闭建议成对配置。

@@ -225,6 +225,11 @@ details.adv .body { margin-top: 13px; }
 .ops { display: flex; flex-wrap: wrap; gap: 10px; }
 .page-footer { text-align: center; color: var(--muted); font-size: 11px; padding: 10px 0 4px; }
 
+/* ==================== Emby 登录测试 ==================== */
+.login-test { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.login-test .ok { color: var(--ok); font-weight: 600; }
+.login-test .err { color: #b42318; font-weight: 600; }
+
 /* ==================== 定时规则卡片 ==================== */
 .section-bar {
   display: flex; align-items: center; justify-content: space-between;

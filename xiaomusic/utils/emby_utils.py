@@ -256,6 +256,7 @@ class EmbyUtil:
         self.username = username or ""
         self.password = password or ""
         self._access_token = None
+        self._auth_user_id = None
         # 稳定的设备 ID（基于 host + 用户名，重启后一致）
         self._device_id = f"xiaoemby-{uuid.uuid5(uuid.NAMESPACE_DNS, f'{host}-{self.username}')}"
         if self.username and self.password:
@@ -293,6 +294,7 @@ class EmbyUtil:
             if response.status_code == 200:
                 data = response.json()
                 self._access_token = data.get("AccessToken", "")
+                self._auth_user_id = (data.get("User") or {}).get("Id", "")
                 if self._access_token:
                     self.log.info(
                         f"Emby 用户登录成功: username={self.username}, "
@@ -308,6 +310,7 @@ class EmbyUtil:
         except Exception as e:
             self.log.error(f"Emby 用户登录异常: {e}")
         self._access_token = None
+        self._auth_user_id = None
         return False
 
     def _get_auth_header(self):

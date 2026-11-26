@@ -173,6 +173,7 @@ $(function () {
     autoSelectOne();
 
     renderCronRules(data.crontab_json || "[]");
+    populateShutdownDevices();
   });
 
     $("#update-devices").on("click", function () {
@@ -575,6 +576,40 @@ $(function () {
   // 将函数暴露到全局作用域，以便在保存配置时使用
   window.getEmbyUsersConfig = getEmbyUsersConfig;
 
+  // Emby 登录测试（不保存配置）
+  $("#emby_test_login").on("click", function () {
+    const $btn = $(this);
+    const $result = $("#emby_test_result");
+    const protocol = $("#emby_protocol").val() || "http";
+    const host = $("#emby_host_input").val() || "";
+    const port = $("#emby_port").val() || "";
+    const fullHost = `${protocol}://${host}${port ? ":" + port : ""}`;
+    $result.removeClass("ok err").text("正在测试…");
+    $btn.prop("disabled", true);
+    $.ajax({
+      type: "POST",
+      url: "/xiaoemby/system/test_emby_login",
+      contentType: "application/json",
+      data: JSON.stringify({
+        host: fullHost,
+        username: $("#emby_username").val(),
+        password: $("#emby_password").val(),
+      }),
+      success: function (resp) {
+        $result
+          .removeClass("ok err")
+          .addClass(resp.success ? "ok" : "err")
+          .text(resp.message || (resp.success ? "登录成功" : "登录失败"));
+      },
+      error: function (xhr) {
+        $result.removeClass("ok err").addClass("err").text("请求失败：" + xhr.status);
+      },
+      complete: function () {
+        $btn.prop("disabled", false);
+      },
+    });
+  });
+
   // ============ 定时开关语音口令 ============
   const CRON_REPEAT = [
     ["every", "每天", "*"],
@@ -727,5 +762,41 @@ $(function () {
     syncCronJson();
     drawCronRules();
     $("#cron_rules .rule").last().addClass("open");
+  });
+
+  // 快捷定时关机：与主面板原来的“定时关机”能力一致，统一放到设置页
+  function populateShutdownDevices() {
+    const $sel = $("#shutdown_did");
+    $sel.empty();
+    $("#mi_did input.custom-checkbox").each(function () {
+      const did = $(this).val();
+      const label = $(`label[for="${did}"]`).text() || did;
+      $sel.append(`<option value="${did}">${label}</option>`);
+    });
+    if (!$sel.children().length) {
+      $sel.append('<option value="">无可用设备</option>');
+    }
+  }
+  $("[data-shutdown]").on("click", function () {
+    const did = $("#shutdown_did").val();
+    const cmd = $(this).data("shutdown");
+    const $result = $("#shutdown_result");
+    if (!did) {
+      $result.text("请先勾选设备并刷新设备列表");
+      return;
+    }
+    $result.text("正在发送…");
+    $.ajax({
+      type: "POST",
+      url: "/cmd",
+      contentType: "application/json",
+      data: JSON.stringify({ did: did, cmd: cmd }),
+      success: function (resp) {
+        $result.text(resp && resp.ret === "OK" ? `已发送：${cmd}` : `发送失败：${(resp && resp.ret) || "未知错误"}`);
+      },
+      error: function (xhr) {
+        $result.text("请求失败：" + xhr.status);
+      },
+    });
   });
 });

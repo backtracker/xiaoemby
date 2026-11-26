@@ -10,6 +10,7 @@ from starlette.background import BackgroundTask
 from xiaomusic import __version__
 from xiaomusic.api.dependencies import config, log, xiaomusic
 from xiaomusic.utils.system_utils import deepcopy_data_no_sensitive_info
+from xiaomusic.utils.emby_utils import EmbyUtil
 router = APIRouter()
 
 @router.get("/")
@@ -61,6 +62,40 @@ async def savesetting(request: Request):
         return "save success"
     except json.JSONDecodeError as err:
         raise HTTPException(status_code=400, detail="Invalid JSON") from err
+
+
+@router.post("/xiaoemby/system/test_emby_login")
+async def test_emby_login(request: Request):
+    """测试 Emby 用户名密码能否登录（不保存配置）"""
+    try:
+        data = json.loads((await request.body()).decode("utf-8"))
+        config_obj = xiaomusic.getconfig()
+        host = data.get("host") or config_obj.emby_host
+        username = data.get("username") or config_obj.emby_username
+        password = data.get("password") or ""
+        if password in ("******", ""):
+            password = config_obj.emby_password
+
+        if not host or not username or not password:
+            return {"success": False, "message": "请先填写 Emby 服务器地址、用户名和密码"}
+
+        util = EmbyUtil(
+            host=host,
+            user_id="",
+            log=log,
+            username=username,
+            password=password,
+        )
+        if util.login():
+            return {
+                "success": True,
+                "message": f"登录成功：{username}",
+                "userId": (util._auth_user_id or ""),
+            }
+        return {"success": False, "message": "登录失败，请检查用户名或密码"}
+    except Exception as err:
+        log.error(f"Test Emby login failed: {err}")
+        return {"success": False, "message": f"测试异常：{err}"}
 
 
 @router.post("/xiaoemby/system/modifiysetting")

@@ -1440,13 +1440,4 @@ body {
   box-shadow: var(--shadow-lg);
 }
 
-.timer-intro {
-  margin: 0 0 var(--spacing-lg);
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  background: var(--primary-light);
-  color: var(--primary-color);
-  font-size: var(--font-size-xs);
-  line-height: 1.6;
-}
 

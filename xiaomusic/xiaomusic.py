@@ -550,9 +550,9 @@ class XiaoMusic:
 
     # 口令:播放今日推荐
     async def daily_recommend(self, did="", renew=False, **kwargs):
-        """生成今日推荐歌单、播放，并用 TTS 播报推荐理由。
+        """生成今日推荐歌单并播放，不播报推荐理由。
 
-        生成放到后台 task，与「生成中」提示并行；同一设备正在生成/播报时
+        生成放到后台 task，与「生成中」提示并行；同一设备正在生成时
         忽略重复口令，避免静默等待导致用户重复发指令后的多轮 TTS。
         """
         if not self.config.enable_daily_recommend:
@@ -604,21 +604,11 @@ class XiaoMusic:
             self.music_library.play_list_update_music("今日推荐", rec.track_names)
             await self.do_play_music_list(did, "今日推荐", rec.track_names[0])
 
-            # 节目叙事：总起 + 各段串联语，让推荐从「一句话」变成一份节目单
-            message = rec.reason
-            if rec.segments:
-                for seg in rec.segments:
-                    transition = (seg.get("transition") or "").strip()
-                    theme = (seg.get("theme") or "").strip()
-                    if transition:
-                        message += f"。{theme}：{transition}" if theme else f"。{transition}"
-            if renew:
-                message += f"。今日已换批 {rec.renewals} 次，最多 3 次"
-            try:
-                await self.do_tts(did, message)
-            except Exception as exc:
-                self.log.warning(f"播报今日推荐理由失败: {exc}")
-            self.log.info(f"今日推荐生成完成: source={rec.source}, tracks={len(rec.tracks)}")
+            # 不播报生成原因 / 节目串联语，生成完成后直接播放歌单
+            self.log.info(
+                f"今日推荐生成完成: source={rec.source}, tracks={len(rec.tracks)}, "
+                f"reason={rec.reason}"
+            )
             return rec
         finally:
             self._daily_recommend_generating.discard(did)
