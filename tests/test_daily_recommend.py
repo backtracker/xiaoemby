@@ -1,14 +1,18 @@
-"""今日推荐 v2 核心算法单测（纯函数，不需要网络与 Emby）。"""
+"""今日推荐 v2/v3 核心算法单测（纯函数，不需要网络与 Emby）。"""
 
 import json
 from collections import Counter
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
 
+from xiaomusic.utils.behavior_profile import build_profile, library_by_id
+from xiaomusic.utils.candidate_pool import build_candidate_pool, language_of
 from xiaomusic.utils.daily_recommend import (
     RecipeInvalid,
     _build_result,
+    _mixed_multipliers,
     _pick_local,
     _recommend_penalty,
     _save_cache,
@@ -23,6 +27,8 @@ from xiaomusic.utils.daily_recommend import (
     validate_recipe,
 )
 from xiaomusic.utils.emby_utils import Audio
+from xiaomusic.utils.library_mirror import MirrorModel
+from xiaomusic.utils.pr_events import LOCAL_TZ, PREvent, PRFailure, PRReadResult
 
 GENRES = ["流行", "民谣", "摇滚", "古典", "J-Pop", "爵士"]
 ARTISTS = ["甲", "乙", "丙", "丁", "戊", "己"]
@@ -374,8 +380,9 @@ class FakeEmby:
         return list(self.tracks)
 
     def fetch_tracks_by_ids(self, ids):
-        wanted = {str(i) for i in ids}
-        return [t for t in self.tracks if str(t.id) in wanted]
+        wanted = [str(i) for i in ids]
+        by_id = {str(t.id): t for t in self.tracks}
+        return [by_id[i] for i in wanted if i in by_id]
 
     def fetch_recently_played(self, limit=50):
         return list(self.tracks[:limit])
@@ -590,3 +597,326 @@ def test_snooze_excludes_track(tmp_path, monkeypatch):
     finally:
         module._today = original
     assert "歌0" not in result.track_ids
+
+
+# ---- v3：档位判定、冻结与回退（主缝 generate(cfg, emby)）----
+def _v3_audio(i, genres, artist="甲", year=2000, favorite=False, play_count=0):
+    return Audio(
+        name=f"歌{i}",
+        id=str(i),
+        album=f"专{i}",
+        album_artist=artist,
+        genres=genres,
+        production_year=year,
+        play_count=play_count,
+        is_favorite=favorite,
+        date_created="2020-01-01T00:00:00Z",
+    )
+
+
+def _v3_raw(i, genres, artist="甲", year=2000, favorite=False, play_count=0):
+    return {
+        "Id": str(i),
+        "Name": f"歌{i}",
+        "Genres": genres,
+        "ProductionYear": year,
+        "ArtistItems": [{"Name": artist}],
+        "AlbumArtist": artist,
+        "Album": f"专{i}",
+        "DateCreated": "2020-01-01T00:00:00.0000000Z",
+        "RunTimeTicks": 200 * 10_000_000,
+        "Path": f"/music/{i}.flac",
+        "UserData": {
+            "PlayCount": play_count,
+            "IsFavorite": favorite,
+            "LastPlayedDate": None,
+        },
+    }
+
+
+def _v3_library(specs, user_id="u1", stale=False):
+    """构造镜像状态 + 快照 + 对应 Audio 列表；specs = [(i, genres, artist, year), ...]。"""
+    raws = []
+    audios = []
+    for spec in specs:
+        i, genres = spec[0], spec[1]
+        artist = spec[2] if len(spec) > 2 else f"歌手{i % 8}"
+        year = spec[3] if len(spec) > 3 else 2000
+        raws.append(_v3_raw(i, genres, artist, year))
+        audios.append(_v3_audio(i, genres, artist, year))
+    state = MirrorModel.from_emby_pages([raws], user_id)
+    if stale:
+        state = MirrorModel.reduce(state, {"type": "ADVANCE_DAYS", "n": 30})
+    # LibraryMirror.snapshot() 每行都带 id 列；MirrorModel 状态里 id 是字典键。
+    snapshot = [
+        dict(row, id=item_id)
+        for item_id, row in state["mirror"]["items"].items()
+    ]
+    return state, snapshot, audios
+
+
+def _v3_event(day, item_id, user_id="u1", *, valid=True, short=False, incomplete=False):
+    return PREvent(
+        user_id=user_id,
+        item_id=str(item_id),
+        device_name="dev",
+        started_at=datetime(2026, 11, 1 + day, 10, 0, tzinfo=LOCAL_TZ),
+        duration_seconds=30.0 if short else 200.0,
+        completion_rate=None if short else (0.4 if incomplete else 1.0),
+        is_valid=valid,
+        is_extremely_short=short,
+        is_incomplete=incomplete,
+        segment_count=1,
+    )
+
+
+def _v3_cfg(tmp_path, **overrides):
+    values = {
+        "cache_dir": str(tmp_path),
+        "timezone": "Asia/Shanghai",
+        "enable_daily_recommend": True,
+        "llm_endpoint": "http://fake/v1",
+        "llm_api_key": "k",
+        "llm_model": "m",
+        "daily_recommend_count": 20,
+        "explore_ratio": 0.15,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def _v3_stub_llm(monkeypatch, reason="今天按你最近的收听编排"):
+    recipe = {
+        "schema_version": 1,
+        "intent": "comfort",
+        "reason": reason,
+        "include": {"genres": ["Mandopop", "J-Pop"]},
+        "weights": {"familiarity": 0.6, "novelty": 0.5, "mood_match": 0.5},
+    }
+    monkeypatch.setattr(
+        "xiaomusic.utils.daily_recommend.ask_llm", lambda *a, **kw: recipe
+    )
+
+
+def _v3_inject(emby, pr_events, state, snapshot):
+    emby.pr_events = pr_events
+    emby.mirror_state = state
+    emby.library_snapshot = snapshot
+    return emby
+
+
+def test_v3_pr_mode_when_span_and_events_qualified(tmp_path, monkeypatch):
+    specs = [(i, [g]) for i, g in enumerate(
+        ["Mandopop", "Cantopop", "国语", "华语民谣", "J-Pop", "Anime", "Rock", "Pop"] * 3
+    )]
+    state, snapshot, audios = _v3_library(specs)
+    events = tuple(_v3_event(d % 10, str(1 + d % 2)) for d in range(20))
+    cfg = _v3_cfg(tmp_path)
+    emby = _v3_inject(
+        FakeEmby(audios),
+        PRReadResult(True, None, "u1", events),
+        state,
+        snapshot,
+    )
+    _v3_stub_llm(monkeypatch)
+
+    result = generate(cfg, emby)
+    assert result.mode == "pr"
+    assert result.fallback_reason == ""
+    assert result.segments == []
+    assert len(result.tracks) >= 10
+
+
+def test_v3_mixed_mode_when_weak_but_sufficient(tmp_path, monkeypatch):
+    specs = [(i, [g]) for i, g in enumerate(
+        ["Mandopop", "Cantopop", "国语", "华语民谣", "J-Pop", "Anime", "Rock", "Pop"] * 3
+    )]
+    state, snapshot, audios = _v3_library(specs)
+    events = tuple(_v3_event(d, 1 + d) for d in range(5))
+    cfg = _v3_cfg(tmp_path)
+    emby = _v3_inject(
+        FakeEmby(audios),
+        PRReadResult(True, None, "u1", events),
+        state,
+        snapshot,
+    )
+    _v3_stub_llm(monkeypatch)
+
+    result = generate(cfg, emby)
+    assert result.mode == "mixed"
+    assert emby.candidate_calls == 1  # 混合模式沿用 v2 候选池
+
+
+def test_v3_v2_fallback_on_pr_failure(tmp_path, monkeypatch):
+    specs = [(i, [g]) for i, g in enumerate(["Mandopop", "J-Pop", "Rock"] * 8)]
+    state, snapshot, audios = _v3_library(specs)
+    cfg = _v3_cfg(tmp_path)
+    emby = _v3_inject(
+        FakeEmby(audios),
+        PRReadResult.failure(PRFailure.QUERY_FAILED),
+        state,
+        snapshot,
+    )
+    _v3_stub_llm(monkeypatch)
+
+    result = generate(cfg, emby)
+    assert result.mode == "v2"
+    assert result.fallback_reason == "query_failed"
+    assert len(result.tracks) >= 10  # 回退不打断出歌单
+
+
+def test_v3_v2_fallback_on_insufficient_data(tmp_path, monkeypatch):
+    specs = [(i, [g]) for i, g in enumerate(["Mandopop", "J-Pop", "Rock"] * 8)]
+    state, snapshot, audios = _v3_library(specs)
+    events = tuple(_v3_event(d, 1 + d) for d in range(3))
+    cfg = _v3_cfg(tmp_path)
+    emby = _v3_inject(
+        FakeEmby(audios),
+        PRReadResult(True, None, "u1", events),
+        state,
+        snapshot,
+    )
+    _v3_stub_llm(monkeypatch)
+
+    result = generate(cfg, emby)
+    assert result.mode == "v2"
+    assert result.fallback_reason == "insufficient_data"
+
+
+def test_v3_v2_fallback_when_mirror_stale(tmp_path, monkeypatch):
+    specs = [(i, [g]) for i, g in enumerate(["Mandopop", "J-Pop", "Rock"] * 8)]
+    state, snapshot, audios = _v3_library(specs, stale=True)
+    events = tuple(_v3_event(d % 10, str(1 + d % 2)) for d in range(20))
+    cfg = _v3_cfg(tmp_path)
+    emby = _v3_inject(
+        FakeEmby(audios),
+        PRReadResult(True, None, "u1", events),
+        state,
+        snapshot,
+    )
+    _v3_stub_llm(monkeypatch)
+
+    result = generate(cfg, emby)
+    assert result.mode == "v2"
+    assert result.fallback_reason == "mirror_stale"
+
+
+def test_v3_mode_frozen_for_the_day_on_renew(tmp_path, monkeypatch):
+    specs = [(i, [g]) for i, g in enumerate(["Mandopop", "J-Pop", "Rock"] * 8)]
+    state, snapshot, audios = _v3_library(specs)
+    qualified = tuple(_v3_event(d % 10, str(1 + d % 2)) for d in range(20))
+    weak = tuple(_v3_event(d, 1 + d) for d in range(3))
+    cfg = _v3_cfg(tmp_path)
+    emby = _v3_inject(FakeEmby(audios), PRReadResult(True, None, "u1", qualified), state, snapshot)
+    _v3_stub_llm(monkeypatch)
+
+    import xiaomusic.utils.daily_recommend as module
+
+    original = module._today
+    module._today = lambda cfg: "2026-11-22"
+    try:
+        first = generate(cfg, emby)
+        assert first.mode == "pr"
+        # 「换一批」时 PR 数据突然变弱，仍沿用当天冻结的档位
+        emby.pr_events = PRReadResult(True, None, "u1", weak)
+        second = generate(cfg, emby, renew=True)
+    finally:
+        module._today = original
+    assert first.mode == second.mode == "pr"
+    assert second.renewals == 1
+
+
+def test_build_catalog_carries_pr_behavior_fields_only_when_supplied():
+    catalog = build_catalog(make_candidates())
+    assert "play_events" not in catalog["behavior"]
+    assert "daypart_note" not in catalog["behavior"]
+
+    catalog = build_catalog(
+        make_candidates(),
+        play_events={"completed": 7, "short": 2, "window_days": 7},
+        daypart_note="近7天 6-12点占80%，以Mandopop居多" * 4,
+    )
+    assert catalog["behavior"]["play_events"]["completed"] == 7
+    assert len(catalog["behavior"]["daypart_note"]) <= 80
+
+
+def test_v3_front_five_constraints(tmp_path, monkeypatch):
+    specs = [(i, [g]) for i, g in enumerate(
+        ["Mandopop", "Cantopop", "国语", "华语民谣", "J-Pop", "Anime", "Rock", "Pop"] * 3
+    )]
+    state, snapshot, audios = _v3_library(specs)
+    events = tuple(_v3_event(d % 10, str(1 + d % 2)) for d in range(20))
+    cfg = _v3_cfg(tmp_path)
+    emby = _v3_inject(FakeEmby(audios), PRReadResult(True, None, "u1", events), state, snapshot)
+    _v3_stub_llm(monkeypatch)
+
+    result = generate(cfg, emby)
+    assert result.mode == "pr"
+    front = result.tracks[:5]
+    assert len(front) == 5
+
+    genre_counts = Counter(g for audio in front for g in audio.genres)
+    assert max(genre_counts.values()) <= 2  # 每流派 ≤2
+    language_counts = Counter(language_of({"genres": a.genres}) for a in front)
+    assert max(language_counts.values()) <= 3  # 每语言 ≤3
+    foreign = sum(
+        1 for a in front if language_of({"genres": a.genres}) != "华语"
+    )
+    assert 1 <= foreign <= 2  # 非华语 1~2 首
+
+    # ≥1 首来自探索池（没听过 / 新发行 / 冷门簇）
+    profile = build_profile(
+        events, library=library_by_id(snapshot), user_id="u1", today="2026-11-22"
+    )
+    pool = build_candidate_pool(snapshot, profile, today="2026-11-22")
+    assert {str(a.id) for a in front} & set(pool.explore)
+
+
+def test_v3_mixed_multipliers_bounded_and_soft():
+    specs = [(i, [g]) for i, g in enumerate(
+        ["Mandopop", "Cantopop", "国语", "华语民谣", "J-Pop", "Anime", "Rock", "Pop"] * 3
+    )]
+    _state, snapshot, audios = _v3_library(specs)
+    events = tuple(_v3_event(d, 1 + d) for d in range(5))
+    profile = build_profile(
+        events, library=library_by_id(snapshot), user_id="u1", today="2026-11-22"
+    )
+    multipliers = _mixed_multipliers(profile, [a.id for a in audios])
+    assert multipliers
+    assert all(0.8 <= value <= 1.2 for value in multipliers.values())
+
+    catalog = build_catalog(audios)
+    recipe = validate_recipe(
+        {
+            "schema_version": 1,
+            "intent": "discover",
+            "reason": "混合模式只做有限打分修正",
+            "include": {"genres": ["Mandopop", "Cantopop", "国语", "华语民谣", "J-Pop", "Anime", "Rock", "Pop"]},
+            "weights": {"novelty": 0.7},
+        },
+        catalog,
+    )
+    adjusted = pick_tracks(recipe, audios, catalog, 20, score_multipliers=multipliers)
+    assert len(adjusted) >= 10  # 只修正打分，不剔除曲目
+
+
+def test_v3_config_fields_have_decided_defaults():
+    from xiaomusic.config import Config
+
+    cfg = Config()
+    assert (cfg.pr_mode_min_days, cfg.pr_mode_min_events) == (7, 20)
+    assert (cfg.mixed_mode_min_days, cfg.mixed_mode_min_events) == (1, 5)
+    assert cfg.mirror_stale_days == 7
+    assert (cfg.short_seconds, cfg.valid_completion, cfg.weak_completion) == (60, 0.8, 0.5)
+    assert (cfg.negative_half_life_days, cfg.positive_half_life_days) == (7, 14)
+    assert (cfg.revisit_max_per_day, cfg.revisit_min_gap_days) == (2, 30)
+    assert (cfg.immersion_min_plays, cfg.immersion_min_share) == (5, 0.5)
+    assert cfg.familiar_per_artist_cap == 2
+    assert cfg.seed_recall_enabled is False
+    assert cfg.similarity_genre_weight == 0.5
+    assert cfg.similarity_language_weight == 0.2
+    assert (cfg.freshness_weight, cfg.diversity_weight, cfg.mmr_lambda) == (0.9, 0.8, 0.7)
+    # 旧字段仍可用
+    assert cfg.explore_ratio == 0.15
+    assert cfg.daily_recommend_count == 20
+
