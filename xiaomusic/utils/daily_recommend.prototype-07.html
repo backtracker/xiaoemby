@@ -27,7 +27,7 @@
   .seg { margin:12px 0; border-left:4px solid var(--accent); padding-left:12px; }
   .seg h3 { margin:0 0 6px; font-size:15px; }
   .seg .meta { color:var(--muted); font-size:13px; margin-bottom:6px; }
-  .track { display:grid; grid-template-columns:30px 190px 110px 170px 1fr 60px; gap:8px; padding:3px 0; border-bottom:1px dotted var(--line); font-size:13px; }
+  .track { display:grid; grid-template-columns:30px 165px 85px 60px 160px 1fr 55px; gap:8px; padding:3px 0; border-bottom:1px dotted var(--line); font-size:13px; }
   .track .src { color:var(--muted); }
   .track .src.explore { color:var(--accent); }
   .track .why { color:var(--muted); }
@@ -44,7 +44,7 @@
 <p class="lead">
 <strong>这一版回答的问题</strong>：三段式被识破成「固定套路」后，改成<strong>按分数排名决定出现顺序</strong>会不会既不像剧本、又不随机？<br>
 代码事实：现有 <code>pick_tracks()</code>（第 656 行）本来就是「全局 <code>base_score</code> 排序 + 收藏锚点 + 流派游走 + 探索配额 + MMR」的排名式选曲；<code>pick_tracks_segmented()</code>（第 866 行）是在它之上按 <code>share</code> 切成三段逐段调用——套路来自切段层，不是排名。<br>
-下面可切换三种排序、按真实日期推进时间。<strong>降权只来自真实播放后的行为结果</strong>：极短播放强降权、未完成弱降权、听完或只推荐没播放都不降权；推荐曝光只记数去重复。曲目名为真实样本占位。<strong>一次性原型，不要合入生产。</strong>
+下面可切换三种排序、按真实日期推进时间，并用<strong>新鲜度旋钮</strong>决定「没听过的歌」占多少。<strong>降权只来自真实播放后的行为结果</strong>：极短播放强降权、未完成弱降权、听完或只推荐没播放都不降权；推荐曝光只记数去重复。曲目名为真实样本占位。<strong>一次性原型，不要合入生产。</strong>
 </p>
 
 <div class="flash" id="flash">当前变化：初始状态。</div>
@@ -61,6 +61,7 @@
       <b>与上一版相比</b><span id="s-drift"></span>
       <b>播放结果事件</b><span id="s-events"></span>
       <b>曝光次数（只去重复）</b><span id="s-expo"></span>
+      <b>新鲜度奖励</b><span id="s-fresh"></span>
       <b>焦点播放结果</b><span id="s-evidence"></span>
     </div>
   </div>
@@ -148,6 +149,7 @@ const Logic = (() => {
     if (ev.outcome === 'short') trackPen = 0.5 * dec(ev);          // 极短播放：强软降权
     if (ev.outcome === 'incomplete') trackPen = 0.25 * dec(ev);    // 未完成播放：弱软降权
     if (ev.outcome === 'completed' || ev.outcome === 'unplayed') trackPen = 0; // 听完 / 只推荐没播放 → 不降权
+    const unheard = !t.playCount && !t.windowCount && !t.favorite;             // 没有任何播放证据的新歌
     // 四层证据门槛：单曲降权不自动升级到艺人 / 流派
     const negArtists = {}, negGenres = {};
     for (const other of TRACKS) {
@@ -168,8 +170,9 @@ const Logic = (() => {
     if (ctx.mode === 'v2') total = (1 + v2Taste * 1.5 + ucb) * repeat * fresh + familiar * 0.6 + novelty;
     else if (ctx.mode === 'hybrid') total = ((1 + v2Taste * 1.5 + ucb) * repeat * fresh + familiar * 0.6 + novelty) * prMultiplier;
     else total = (1 + prTaste * 1.5 + ucb) * repeat * fresh + familiar * 0.6 + novelty;
+    if (unheard) total += (ctx.freshBonus || 0) * 1.5;                          // 新鲜度奖励（旋钮，决定探索比例）
     total -= ctx.batch * 0.04 * (t.id.length % 3);
-    return { total: Math.round(total * 100) / 100, parts: { historic, win, conf, prTaste, familiar, novelty, repeat, fresh, ucb, prMultiplier } };
+    return { total: Math.round(total * 100) / 100, parts: { historic, win, conf, prTaste, familiar, novelty, repeat, fresh, ucb, prMultiplier, unheard } };
   }
 
   function sourceOf(t, ctx) {
@@ -266,13 +269,14 @@ const FREE = [
   ['skip1','时间过 1 天'],['skip3','时间过 3 天（没生成歌单）'],
   ['out-complete','江南：完整播放'],['out-incomplete','江南：未完成(0.6)'],
   ['out-short','江南：极短(<60s)'],['out-unplayed','江南：推荐过但没播放'],
+  ['fresh0','新鲜度：无(0)'],['fresh06','新鲜度：中(0.6)'],['fresh10','新鲜度：高(1.0)'],
   ['fav','切换收藏江南'],
 ];
 
 let state, scenario = null, stepIdx = 0;
 
 function reset() {
-  state = { mode:'pr', ordering:'rank', samples:25, batch:0, day:1, events:{},
+  state = { mode:'pr', ordering:'mmr', samples:25, batch:0, day:1, events:{}, freshBonus:0.9,
     favorites:new Set(['jiangan']), exposure:{'流行':3,'民谣':1,'摇滚':2}, exposureIds:{},
     playlist:null, prevIds:null, drift:'—', last:'初始状态：PR 模式、纯分数排名、第 1 天。' };
   Logic.TRACKS.forEach(t => { t.favorite = state.favorites.has(t.id); });
@@ -285,6 +289,9 @@ function dispatch(action, note) {
     case 'pr': case 'hybrid': case 'v2': state.mode = action; break;
     case 'samples7': state.samples = 25; break;
     case 'samples3': state.samples = 3; break;
+    case 'fresh0': state.freshBonus = 0; break;
+    case 'fresh06': state.freshBonus = 0.6; break;
+    case 'fresh10': state.freshBonus = 1.0; break;
     case 'generate':
       state.prevIds = before;
       state.playlist = state.ordering === 'segments'
@@ -332,6 +339,7 @@ function render() {
   document.getElementById('s-conf').textContent = `${state.samples} 条 → confidence ${Logic.confidence(state.samples).toFixed(2)}`;
   document.getElementById('s-batch').textContent = String(state.batch);
   document.getElementById('s-drift').textContent = state.drift;
+  document.getElementById('s-fresh').textContent = state.freshBonus.toFixed(1) + '（未听过曲目额外加分，这就是探索比例旋钮）';
   const outcomeName = { completed:'完整播放', incomplete:'未完成', short:'极短播放', unplayed:'推荐过但没播放' };
   const evs = Object.keys(state.events).map(id => {
     const e = state.events[id], t = Logic.TRACKS.find(x => x.id === id);
@@ -374,10 +382,13 @@ fresh=${p.fresh.toFixed(2)}  ucb=${p.ucb.toFixed(2)}  prMultiplier=${p.prMultipl
   else pl.innerHTML = state.playlist.groups.map(g =>
     `<div class="seg"><h3>${g.name} · ${g.share}</h3><div class="meta">${g.rule}</div>` +
     g.items.map((x, i) => `<div class="track"><span>${i + 1}</span><span>${x.t.name}</span><span>${x.t.artist}</span>` +
+      `<span>${Logic.score(x.t, state).parts.unheard ? '未听过' : '已听过'}</span>` +
       `<span class="src ${x.src[1]}">${x.src[0]}</span><span class="why">${x.why}</span>` +
       `<span class="score">${x.score}</span></div>`).join('') + '</div>').join('');
 
   const SCENARIOS = [
+    { name:'新鲜度旋钮', desc:'同一天、MMR 排序，只调新鲜度奖励。看「未听过」曲目从 6/20 涨到 10/20、并从榜尾散进前 10 的过程。',
+      steps:[['fresh0','新鲜度 0'],['generate','看列表'],['fresh06','新鲜度 0.6'],['generate','再看'],['fresh10','新鲜度 1.0'],['generate','最终看']] },
     { name:'三段 vs 排名 vs MMR', desc:'同一批曲目、同一天，只改排序方式。看三段式是否真的像剧本，排名是否既自然又不乱。',
       steps:[['segments','三段'],['generate','生成三段版'],['rank','纯排名'],['generate','生成排名版'],['mmr','排名+MMR'],['generate','生成 MMR 版']] },
     { name:'曝光不等于降权', desc:'给江南标「推荐过但没播放」再生成：曝光次数会涨，但分数不降、名次不动——降权必须等真实播放结果。',
