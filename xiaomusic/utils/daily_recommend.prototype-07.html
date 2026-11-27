@@ -56,6 +56,7 @@
     <b>样本 / 置信度</b><span id="s-conf"></span>
     <b>新鲜度奖励</b><span id="s-fresh"></span>
     <b>多样性权重</b><span id="s-div"></span>
+    <b>前五首处理</b><span id="s-front"></span>
     <b>与上一版相比</b><span id="s-drift"></span>
     <b>播放结果</b><span id="s-events"></span>
   </div></div>
@@ -207,6 +208,31 @@ const Logic = (() => {
     return 0.6 * (1 - lang) + 0.4 * (1 - genre);
   };
 
+  // 前五首重点区：只听前五首的人也能听到「最可能喜欢且丰富」的一组
+  // 约束：每流派 ≤1、每语言 ≤2、至少 1 首没听过；在约束内按总分 + 稀缺度取
+  function frontFive(ctx) {
+    const s = t => score(t, ctx).total + (ctx.divWeight || 0) * 0.5;
+    const genre = {}, lang = {}, out = [];
+    let remaining = TRACKS.slice();
+    while (out.length < 5 && remaining.length) {
+      const needUnheard = out.length === 4 && !out.some(t => unheard(t));
+      let best = null, bv = -Infinity;
+      for (const t of remaining) {
+        if ((genre[t.genre] || 0) >= 1) continue;
+        if ((lang[t.lang] || 0) >= 2) continue;
+        if (needUnheard && !unheard(t)) continue;
+        const v = score(t, ctx).total + (ctx.divWeight || 0) * rarity(t, out);
+        if (v > bv) { bv = v; best = t; }
+      }
+      if (!best) break;
+      out.push(best);
+      genre[best.genre] = (genre[best.genre] || 0) + 1;
+      lang[best.lang] = (lang[best.lang] || 0) + 1;
+      remaining = remaining.filter(t => t !== best);
+    }
+    return out;
+  }
+
   function pickRanked(ctx, strategy) {
     const exposure = Object.assign({}, ctx.exposure);
     const c = Object.assign({}, ctx, { exposure });
@@ -216,7 +242,9 @@ const Logic = (() => {
       && (genreCount[t.genre] || 0) < 5 && (langCount[t.lang] || 0) < 12;
     const take = t => { artistCount[t.artist] = (artistCount[t.artist] || 0) + 1;
       genreCount[t.genre] = (genreCount[t.genre] || 0) + 1; langCount[t.lang] = (langCount[t.lang] || 0) + 1; };
-    let remaining = TRACKS.slice(), picked = [];
+    const front = ctx.frontFiveOn === false ? [] : frontFive(c);
+    front.forEach(t => take(t));
+    let remaining = TRACKS.filter(t => !front.includes(t)), picked = front.slice();
     if (strategy === 'rank') {
       remaining.sort((a, b) => (s(b) + (ctx.divWeight || 0) * rarity(b, picked))
         - (s(a) + (ctx.divWeight || 0) * rarity(a, picked)));
@@ -235,7 +263,9 @@ const Logic = (() => {
         remaining = remaining.filter(t => t !== best);
       }
     }
-    return picked.map(t => ({ t, score:s(t), src:sourceOf(t, c), why:reasonOf(t, c, picked) }));
+    return picked.map((t, i) => ({ t, score:s(t), src:sourceOf(t, c),
+      why: i < 5 && ctx.frontFiveOn !== false ? '前五首：最可能喜欢 + 流派/语言不重复' : reasonOf(t, c, picked),
+      front: i < 5 && ctx.frontFiveOn !== false }));
   }
 
   function buildPlaylist(ctx) { // 旧三段式，仅作对照
@@ -269,6 +299,7 @@ const FREE = [
   ['generate','生成今日推荐'],['batch','换一批'],
   ['fresh0','新鲜度 0'],['fresh09','新鲜度 0.9'],
   ['div0','多样性 0'],['div05','多样性 0.5'],['div10','多样性 1.0'],
+  ['front-on','前五首处理：开'],['front-off','前五首处理：关（对照）'],
   ['skip3','时间过 3 天'],['out-short','江南：极短'],['out-incomplete','江南：未完成'],['out-complete','江南：听完'],['out-unplayed','江南：只推荐没播放'],
   ['fav','切换收藏江南'],
 ];
@@ -276,7 +307,7 @@ let state, scenario = null, stepIdx = 0;
 
 function reset() {
   state = { mode:'pr', ordering:'mmr', samples:25, batch:0, day:1, events:{},
-    freshBonus:0.9, divWeight:0.8, favorites:new Set(['jiangan']),
+    freshBonus:0.9, divWeight:0.8, frontFiveOn:true, favorites:new Set(['jiangan']),
     exposure:{'Mandopop':3,'Folk-Pop':1,'Rock':2}, exposureIds:{},
     playlist:null, drift:'—', last:'初始状态：PR 模式、MMR、新鲜度 0.9、多样性 0.8。' };
   Logic.TRACKS.forEach(t => { t.favorite = state.favorites.has(t.id); });
@@ -294,18 +325,27 @@ function dispatch(action, note) {
     case 'div0': state.divWeight = 0; break;
     case 'div05': state.divWeight = 0.5; break;
     case 'div10': state.divWeight = 1.0; break;
-    case 'generate':
-      state.playlist = state.ordering === 'segments'
-        ? { groups: Logic.buildPlaylist(state) }
-        : { groups:[{ name:'全天排名（无分段）', share:'20 首按分数顺序',
-            rule:'排名 + MMR 多样性，无段、无主题',
-            items: Logic.pickRanked(state, state.ordering) }] };
+    case 'front-on': state.frontFiveOn = true; break;
+    case 'front-off': state.frontFiveOn = false; break;
+    case 'generate': {
+      if (state.ordering === 'segments') state.playlist = { groups: Logic.buildPlaylist(state) };
+      else {
+        const items = Logic.pickRanked(state, state.ordering);
+        state.playlist = { groups: state.frontFiveOn ? [
+          { name:'前五首（重点区）', share:'5 首',
+            rule:'最可能喜欢 + 每流派≤1、每语言≤2、至少 1 首未听过',
+            items: items.filter(x => x.front) },
+          { name:'其余 15 首（排名区）', share:'15 首', rule:'排名 + MMR 多样性',
+            items: items.filter(x => !x.front) },
+        ] : [{ name:'全天排名（无前五处理）', share:'20 首', rule:'排名 + MMR 多样性', items }] };
+      }
       {
         const now = state.playlist.groups.flatMap(g => g.items.map(x => x.t.id));
         now.forEach(id => { state.exposureIds[id] = (state.exposureIds[id] || 0) + 1; });
         state.drift = before ? `${now.filter((id, i) => id !== before[i]).length} / 20 首位置变化` : '首版，无对比';
       }
       break;
+    }
     case 'batch': state.batch += 1; dispatch('generate', '换一批：同一天、同一档位与排序，只重排。'); return;
     case 'skip3': state.day += 3; state.playlist = null;
       state.last = `时间到第 ${state.day} 天（期间没生成歌单），旧结果按真实日期衰减。`; render(); return;
@@ -334,12 +374,19 @@ function render() {
   document.getElementById('s-conf').textContent = `${state.samples} 条 → confidence ${Logic.confidence(state.samples).toFixed(2)}`;
   document.getElementById('s-fresh').textContent = state.freshBonus.toFixed(1) + '（没听过的歌加分）';
   document.getElementById('s-div').textContent = state.divWeight.toFixed(1) + '（流派 × 语言稀缺度）';
+  document.getElementById('s-front').textContent = state.frontFiveOn
+    ? '开（每流派≤1、每语言≤2、至少 1 首未听过）' : '关（纯分数前五）';
   document.getElementById('s-drift').textContent = state.drift;
   const on = {completed:'完整播放',incomplete:'未完成',short:'极短播放',unplayed:'只推荐没播放'};
   document.getElementById('s-events').textContent = Object.keys(state.events).map(id =>
     (Logic.TRACKS.find(x => x.id === id) || {}).name + '：' + on[state.events[id].outcome]).join('；') || '无';
 
   const items = state.playlist ? state.playlist.groups.flatMap(g => g.items) : [];
+  const f5 = items.filter(x => x.front);
+  if (state.frontFiveOn && f5.length) {
+    document.getElementById('s-front').textContent += ' → ' +
+      f5.map(x => `${x.t.genre}/${x.t.lang}${Logic.unheard(x.t) ? '(未)' : ''}`).join('，');
+  }
   const cnt = key => items.reduce((a, x) => (a[x.t[key]] = (a[x.t[key]] || 0) + 1, a), {});
   document.getElementById('s-genres').textContent = JSON.stringify(cnt('genre'));
   document.getElementById('s-langs').textContent = JSON.stringify(cnt('lang'));
@@ -374,6 +421,8 @@ taste=${p.prTaste.toFixed(2)}  familiar=${p.familiar.toFixed(2)}  novelty=${p.no
       `<span class="score">${x.score}</span></div>`).join('') + '</div>').join('');
 
   const SCENARIOS = [
+    { name:'前五首重点区', desc:'很多人只听前五首：开关对比。开时前五首按「最可能喜欢 + 每流派≤1、每语言≤2、至少1首未听过」选；关时是纯分数前五。',
+      steps:[['front-off','关掉前五处理'],['generate','看纯分数前五'],['front-on','开启前五处理'],['generate','看丰富前五']] },
     { name:'多样性旋钮', desc:'同一天、新鲜度 0.9，只调多样性权重。看流派/语言分布如何从全华语变成多语多流派。',
       steps:[['div0','多样性 0'],['generate','看列表'],['div05','多样性 0.5'],['generate','再看'],['div10','多样性 1.0'],['generate','最终']] },
     { name:'新鲜度旋钮', desc:'多样性 0.8 不变，只调新鲜度。看未听过曲目从 6/20 涨到 10+/20。',
