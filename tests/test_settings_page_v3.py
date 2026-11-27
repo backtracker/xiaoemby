@@ -25,6 +25,9 @@ JS = (ROOT / "xiaomusic" / "static" / "default" / "setting.js").read_text(
 START = '<section class="panel" id="sec-ai">'
 END = '<section class="panel" id="sec-system">'
 SECTION = HTML[HTML.index(START) : HTML.index(END)]
+SYSTEM_START = '<section class="panel" id="sec-system">'
+SYSTEM_END = '<section class="panel" id="sec-cron">'
+SYSTEM = HTML[HTML.index(SYSTEM_START) : HTML.index(SYSTEM_END)]
 
 
 # 独立真相源：issue 18 Answer 定稿清单 → config.py 字段名。
@@ -178,25 +181,26 @@ def test_js_roundtrip_mechanism_intact():
     assert 'setting.find("input, select, textarea")' in JS
 
 
-def test_mirror_db_path_is_exposed_with_sync_entry_points():
-    marker = '<h3 class="group-title">本地曲库镜像</h3>'
-    assert marker in SECTION, "本地曲库镜像应在 AI 今日推荐分区可见"
-    block = SECTION[SECTION.index(marker) :]
-
+def test_mirror_db_path_lives_in_system_and_sync_buttons_in_ai():
     field = re.search(
         r'<div class="field">\s*<label for="mirror_db_path">(.*?)</label>(.*?)</div>',
-        block,
+        SYSTEM,
         re.S,
     )
-    assert field is not None, "mirror_db_path 缺少可见字段"
+    assert field is not None, "mirror_db_path 应配置在「6. 系统 → 文件路径」"
     label, body = field.group(1), field.group(2)
     assert CJK.search(re.sub(r"<[^>]+>", "", label))
     control = re.search(r"<input[^>]*>", body)
     assert control is not None
     assert 'id="mirror_db_path"' in control.group(0)
-    assert 'placeholder="cache/library_mirror.sqlite3"' in control.group(0)
-    assert "value=" not in control.group(0), "路径输入框默认应为空"
-    assert "设置路径后启用" in body and "首次同步会全量拉取曲库" in body
+    assert f'value="{Config().mirror_db_path}"' in control.group(0), "应预填默认存储路径"
+    assert Config().mirror_db_path, "镜像路径必须有默认值"
+    assert "默认已填好" in body
+
+    marker = '<h3 class="group-title">本地曲库镜像</h3>'
+    assert marker in SECTION, "同步入口应留在 AI 今日推荐分区"
+    block = SECTION[SECTION.index(marker) :]
+    assert "6. 系统" in block and "首次同步会全量拉取曲库" in block
 
     for button_id, text in (
         ("mirror_sync_full", "立即同步本地曲库（首次全量）"),

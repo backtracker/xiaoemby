@@ -214,7 +214,9 @@ class Config:
     pr_timeout_seconds: float = float(os.getenv("XIAOMUSIC_PR_TIMEOUT_SECONDS", "15"))
     pr_event_limit: int = int(os.getenv("XIAOMUSIC_PR_EVENT_LIMIT", "500"))
     # 本地曲库镜像
-    mirror_db_path: str = os.getenv("XIAOMUSIC_MIRROR_DB_PATH", "")
+    mirror_db_path: str = os.getenv(
+        "XIAOMUSIC_MIRROR_DB_PATH", "cache/library_mirror.sqlite3"
+    )
     mirror_stale_days: int = int(os.getenv("XIAOMUSIC_MIRROR_STALE_DAYS", "7"))
 
     # 画像门控 / 对数封顶（对应 ProfileConfig）

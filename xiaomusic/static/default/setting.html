@@ -301,11 +301,7 @@
                 </div>
 
                 <h3 class="group-title">本地曲库镜像</h3>
-                <div class="field">
-                    <label for="mirror_db_path">本地曲库镜像路径</label>
-                    <input id="mirror_db_path" type="text" placeholder="cache/library_mirror.sqlite3" />
-                    <div class="hint">设置路径后启用；首次同步会全量拉取曲库，之后每日增量、每周对账。修改路径后请先「保存配置」再同步。</div>
-                </div>
+                <div class="hint">镜像存储路径在「6. 系统 → 文件路径」中配置，默认已填好。首次同步会全量拉取曲库，之后每日增量、每周对账。</div>
                 <div class="ops" style="margin-top:10px">
                     <button type="button" class="btn pri" id="mirror_sync_full" data-mirror-sync="true" data-kind="full">立即同步本地曲库（首次全量）</button>
                     <button type="button" class="btn sm" id="mirror_sync_daily" data-mirror-sync="true" data-kind="daily">每日增量</button>
@@ -585,6 +581,11 @@
                     <div class="field">
                         <label for="log_file">日志路径</label>
                         <input id="log_file" type="text" value="xiaoemby.log" />
+                    </div>
+                    <div class="field">
+                        <label for="mirror_db_path">本地曲库镜像路径</label>
+                        <input id="mirror_db_path" type="text" value="cache/library_mirror.sqlite3" />
+                        <div class="hint">留空则禁用本地镜像；默认已填好，改路径后请先「保存配置」再到 AI 今日推荐区同步。</div>
                     </div>
                 </div>
 

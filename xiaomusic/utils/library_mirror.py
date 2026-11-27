@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from copy import deepcopy
 from typing import Any
@@ -392,6 +393,9 @@ class LibraryMirror:
 
     def __init__(self, db_path: str):
         self.db_path = str(db_path)
+        parent = os.path.dirname(self.db_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         self._conn = sqlite3.connect(self.db_path)
         self._conn.row_factory = sqlite3.Row
         with self._conn:
