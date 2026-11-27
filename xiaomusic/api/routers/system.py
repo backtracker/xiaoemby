@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+import re
 import shutil
 import tempfile
 from dataclasses import asdict
@@ -56,7 +57,9 @@ async def read_index():
     folder = os.path.dirname(
         os.path.dirname(os.path.dirname(__file__))
     )  # xiaomusic 目录
-    return FileResponse(f"{folder}/static/index.html")
+    return FileResponse(
+        f"{folder}/static/index.html", headers={"Cache-Control": "no-cache"}
+    )
 
 
 def _short_page(relative_path: str) -> HTMLResponse:
@@ -66,7 +69,10 @@ def _short_page(relative_path: str) -> HTMLResponse:
         html = f.read()
     if "<base " not in html:
         html = html.replace("<head>", '<head>\n    <base href="/static/default/">', 1)
-    return HTMLResponse(html)
+    # 静态资源按当前版本生成缓存键，避免浏览器沿用旧版 CSS/JS。
+    html = re.sub(r"\?[vV]ersion=[^\"'\s>]+", f"?v={__version__}", html)
+    html = re.sub(r"\?v=[^\"'\s>]+", f"?v={__version__}", html)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
 @router.get("/player", include_in_schema=False)

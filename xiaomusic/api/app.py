@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
@@ -15,10 +16,6 @@ from xiaomusic.api.dependencies import _state
 
 if TYPE_CHECKING:
     from xiaomusic.xiaomusic import XiaoMusic
-
-# 导入内部状态管理器
-from xiaomusic.api.dependencies import _state
-
 
 @asynccontextmanager
 async def app_lifespan(app):
@@ -54,6 +51,27 @@ app = FastAPI(
     openapi_url=None,
 )
 
+@app.middleware("http")
+async def html_no_cache(request, call_next):
+    """HTML 每次都回源校验，避免长期缓存旧页面结构。"""
+    response = await call_next(request)
+    if request.url.path.endswith(".html"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@app.get("/static/default/index.html", include_in_schema=False)
+async def legacy_player_path():
+    """旧播放器长地址跳转到短路由。"""
+    return RedirectResponse("/player", status_code=302)
+
+
+@app.get("/static/default/setting.html", include_in_schema=False)
+async def legacy_settings_path():
+    """旧设置页长地址跳转到短路由。"""
+    return RedirectResponse("/settings", status_code=302)
+
+
 # 添加 CORS 中间件
 app.add_middleware(
     CORSMiddleware,
@@ -79,7 +97,7 @@ def HttpInit(_xiaomusic: "XiaoMusic"):
     # 挂载静态文件
     folder = os.path.dirname(os.path.dirname(__file__))  # xiaomusic 目录
     app.mount("/static", StaticFiles(directory=f"{folder}/static"), name="static")
-    
+
     # 挂载临时音乐文件目录（用于TTS生成的MP3）
     temp_music_path = os.path.join(folder, "..", "music", "tmp")
     if os.path.exists(temp_music_path):
