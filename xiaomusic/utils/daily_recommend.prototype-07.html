@@ -209,20 +209,28 @@ const Logic = (() => {
   };
 
   // 前五首重点区：只听前五首的人也能听到「最可能喜欢且丰富」的一组
-  // 约束：每流派 ≤1、每语言 ≤2、至少 1 首没听过；在约束内按总分 + 稀缺度取
+  // 约束：每流派 ≤2、每语言 ≤2、至少 2 首非华语（硬下限 1）、至少 1 首没听过
   function frontFive(ctx) {
-    const s = t => score(t, ctx).total + (ctx.divWeight || 0) * 0.5;
     const genre = {}, lang = {}, out = [];
+    const nonZh = () => out.filter(t => t.lang !== '华语').length;
     let remaining = TRACKS.slice();
     while (out.length < 5 && remaining.length) {
-      const needUnheard = out.length === 4 && !out.some(t => unheard(t));
+      const slots = 5 - out.length;
+      const needNonZh = nonZh() < 2 && slots <= (2 - nonZh());
+      const needUnheard = !out.some(unheard) && slots <= 1;
       let best = null, bv = -Infinity;
-      for (const t of remaining) {
-        if ((genre[t.genre] || 0) >= 1) continue;
-        if ((lang[t.lang] || 0) >= 2) continue;
-        if (needUnheard && !unheard(t)) continue;
-        const v = score(t, ctx).total + (ctx.divWeight || 0) * rarity(t, out);
-        if (v > bv) { bv = v; best = t; }
+      for (const pass of [0, 1]) { // pass1 放宽硬目标，保底至少能凑齐 5 首
+        for (const t of remaining) {
+          if ((genre[t.genre] || 0) >= 2) continue;
+          if ((lang[t.lang] || 0) >= 2) continue;
+          if (pass === 0) {
+            if (needNonZh && t.lang === '华语') continue;
+            if (needUnheard && !unheard(t)) continue;
+          }
+          const v = score(t, ctx).total + (ctx.divWeight || 0) * rarity(t, out);
+          if (v > bv) { bv = v; best = t; }
+        }
+        if (best) break;
       }
       if (!best) break;
       out.push(best);
@@ -333,7 +341,7 @@ function dispatch(action, note) {
         const items = Logic.pickRanked(state, state.ordering);
         state.playlist = { groups: state.frontFiveOn ? [
           { name:'前五首（重点区）', share:'5 首',
-            rule:'最可能喜欢 + 每流派≤1、每语言≤2、至少 1 首未听过',
+            rule:'最可能喜欢 + 每流派≤2、每语言≤2、≥2 首非华语、≥1 首未听过',
             items: items.filter(x => x.front) },
           { name:'其余 15 首（排名区）', share:'15 首', rule:'排名 + MMR 多样性',
             items: items.filter(x => !x.front) },
@@ -375,7 +383,7 @@ function render() {
   document.getElementById('s-fresh').textContent = state.freshBonus.toFixed(1) + '（没听过的歌加分）';
   document.getElementById('s-div').textContent = state.divWeight.toFixed(1) + '（流派 × 语言稀缺度）';
   document.getElementById('s-front').textContent = state.frontFiveOn
-    ? '开（每流派≤1、每语言≤2、至少 1 首未听过）' : '关（纯分数前五）';
+    ? '开（每流派≤2、每语言≤2、≥2 首非华语、≥1 首未听过）' : '关（纯分数前五）';
   document.getElementById('s-drift').textContent = state.drift;
   const on = {completed:'完整播放',incomplete:'未完成',short:'极短播放',unplayed:'只推荐没播放'};
   document.getElementById('s-events').textContent = Object.keys(state.events).map(id =>
@@ -421,7 +429,7 @@ taste=${p.prTaste.toFixed(2)}  familiar=${p.familiar.toFixed(2)}  novelty=${p.no
       `<span class="score">${x.score}</span></div>`).join('') + '</div>').join('');
 
   const SCENARIOS = [
-    { name:'前五首重点区', desc:'很多人只听前五首：开关对比。开时前五首按「最可能喜欢 + 每流派≤1、每语言≤2、至少1首未听过」选；关时是纯分数前五。',
+    { name:'前五首重点区', desc:'很多人只听前五首：开关对比。开时前五首按「最可能喜欢 + 每流派≤2、每语言≤2、≥2 首非华语、≥1 首未听过」选；关时是纯分数前五。',
       steps:[['front-off','关掉前五处理'],['generate','看纯分数前五'],['front-on','开启前五处理'],['generate','看丰富前五']] },
     { name:'多样性旋钮', desc:'同一天、新鲜度 0.9，只调多样性权重。看流派/语言分布如何从全华语变成多语多流派。',
       steps:[['div0','多样性 0'],['generate','看列表'],['div05','多样性 0.5'],['generate','再看'],['div10','多样性 1.0'],['generate','最终']] },
