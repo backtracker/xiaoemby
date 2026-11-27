@@ -8,7 +8,7 @@ from dataclasses import asdict
 from datetime import date
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from starlette.background import BackgroundTask
 
 from xiaomusic import __version__
@@ -44,6 +44,29 @@ async def read_index():
         os.path.dirname(os.path.dirname(__file__))
     )  # xiaomusic 目录
     return FileResponse(f"{folder}/static/index.html")
+
+
+def _short_page(relative_path: str) -> HTMLResponse:
+    """短路由返回页面，并注入 base 让相对静态资源仍从原目录加载。"""
+    folder = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    with open(os.path.join(folder, "static", relative_path), encoding="utf-8") as f:
+        html = f.read()
+    if "<base " not in html:
+        html = html.replace("<head>", '<head>\n    <base href="/static/default/">', 1)
+    return HTMLResponse(html)
+
+
+@router.get("/player", include_in_schema=False)
+async def player_page():
+    """播放器页面（短地址）"""
+    return _short_page("default/index.html")
+
+
+@router.get("/settings", include_in_schema=False)
+async def settings_page():
+    """设置页面（短地址）"""
+    return _short_page("default/setting.html")
+
 
 @router.get("/getversion")
 def getversion():
