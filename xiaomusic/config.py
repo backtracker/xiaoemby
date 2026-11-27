@@ -6,8 +6,6 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import get_type_hints
 
-
-
 # 命令匹配字典
 command_action_dict = {
     # ================== 1. 系统与基础控制类 ==================
@@ -198,6 +196,83 @@ class Config:
     llm_max_tokens: int = int(os.getenv("XIAOMUSIC_LLM_MAX_TOKENS", "6000"))
     # 探索配额比例（discover 意图下留多少比例的「没听过」曲目）
     explore_ratio: float = float(os.getenv("XIAOMUSIC_EXPLORE_RATIO", "0.15"))
+
+    # ===== 今日推荐 v3（基于 Playback Reporting 行为数据）=====
+    # 说明：当天冻结、失败静默回退不是可配开关；PR API Key 只在服务端，不进设置页。
+    # 以下均为「拍板起点值」，全部带默认值且可配置。
+
+    # 档位门槛（全局；PR 全权 / 混合 / v2）
+    pr_mode_min_days: int = int(os.getenv("XIAOMUSIC_PR_MODE_MIN_DAYS", "7"))
+    pr_mode_min_events: int = int(os.getenv("XIAOMUSIC_PR_MODE_MIN_EVENTS", "20"))
+    mixed_mode_min_days: int = int(os.getenv("XIAOMUSIC_MIXED_MODE_MIN_DAYS", "1"))
+    mixed_mode_min_events: int = int(os.getenv("XIAOMUSIC_MIXED_MODE_MIN_EVENTS", "5"))
+    # PR 只读取数（凭据复用 Emby 管理员 token）
+    pr_timeout_seconds: float = float(os.getenv("XIAOMUSIC_PR_TIMEOUT_SECONDS", "15"))
+    pr_event_limit: int = int(os.getenv("XIAOMUSIC_PR_EVENT_LIMIT", "500"))
+    # 本地曲库镜像
+    mirror_db_path: str = os.getenv("XIAOMUSIC_MIRROR_DB_PATH", "")
+    mirror_stale_days: int = int(os.getenv("XIAOMUSIC_MIRROR_STALE_DAYS", "7"))
+
+    # 画像门控 / 对数封顶（对应 ProfileConfig）
+    short_seconds: float = float(os.getenv("XIAOMUSIC_SHORT_SECONDS", "60"))
+    valid_completion: float = float(os.getenv("XIAOMUSIC_VALID_COMPLETION", "0.8"))
+    weak_completion: float = float(os.getenv("XIAOMUSIC_WEAK_COMPLETION", "0.5"))
+    min_window_samples: int = int(os.getenv("XIAOMUSIC_MIN_WINDOW_SAMPLES", "5"))
+    min_taste_samples: int = int(os.getenv("XIAOMUSIC_MIN_TASTE_SAMPLES", "15"))
+    min_repeat_count: int = int(os.getenv("XIAOMUSIC_MIN_REPEAT_COUNT", "2"))
+    negative_half_life_days: float = float(os.getenv("XIAOMUSIC_NEGATIVE_HALF_LIFE_DAYS", "7"))
+    positive_half_life_days: float = float(os.getenv("XIAOMUSIC_POSITIVE_HALF_LIFE_DAYS", "14"))
+    immersion_half_life_days: float = float(os.getenv("XIAOMUSIC_IMMERSION_HALF_LIFE_DAYS", "7"))
+    # 回访（≥2 次有效播放 + ≥30 天间隔 + 30 天排除窗，每日 1~2 首）
+    revisit_min_valid_plays: int = int(os.getenv("XIAOMUSIC_REVISIT_MIN_VALID_PLAYS", "2"))
+    revisit_min_gap_days: int = int(os.getenv("XIAOMUSIC_REVISIT_MIN_GAP_DAYS", "30"))
+    revisit_max_per_day: int = int(os.getenv("XIAOMUSIC_REVISIT_MAX_PER_DAY", "2"))
+    # 偶发沉浸（7 天 ≥5 次 / ≥50% / 此前 180 天 ≤1 次，≥2 次爆发升级长期）
+    immersion_window_days: int = int(os.getenv("XIAOMUSIC_IMMERSION_WINDOW_DAYS", "7"))
+    immersion_min_plays: int = int(os.getenv("XIAOMUSIC_IMMERSION_MIN_PLAYS", "5"))
+    immersion_min_share: float = float(os.getenv("XIAOMUSIC_IMMERSION_MIN_SHARE", "0.5"))
+    immersion_prior_days: int = int(os.getenv("XIAOMUSIC_IMMERSION_PRIOR_DAYS", "180"))
+    immersion_prior_max: int = int(os.getenv("XIAOMUSIC_IMMERSION_PRIOR_MAX", "1"))
+    immersion_upgrade_bursts: int = int(os.getenv("XIAOMUSIC_IMMERSION_UPGRADE_BURSTS", "2"))
+    immersion_upgrade_gap_days: int = int(os.getenv("XIAOMUSIC_IMMERSION_UPGRADE_GAP_DAYS", "30"))
+    immersion_min_weight: float = float(os.getenv("XIAOMUSIC_IMMERSION_MIN_WEIGHT", "0.05"))
+    # 熟悉歌手（≥20 次 / 收藏 ≥2 首 / 30 天 ≥3 次，每歌手 ≤2 首未听）
+    familiar_play_count: int = int(os.getenv("XIAOMUSIC_FAMILIAR_PLAY_COUNT", "20"))
+    familiar_favorite_count: int = int(os.getenv("XIAOMUSIC_FAMILIAR_FAVORITE_COUNT", "2"))
+    familiar_recent_plays: int = int(os.getenv("XIAOMUSIC_FAMILIAR_RECENT_PLAYS", "3"))
+    familiar_recent_days: int = int(os.getenv("XIAOMUSIC_FAMILIAR_RECENT_DAYS", "30"))
+    familiar_per_artist_cap: int = int(os.getenv("XIAOMUSIC_FAMILIAR_PER_ARTIST_CAP", "2"))
+    llm_window_days: int = int(os.getenv("XIAOMUSIC_LLM_WINDOW_DAYS", "7"))
+
+    # 候选池 / 相似度（A/B 未裁决前种子相似召回默认关闭）
+    seed_recall_enabled: bool = (
+        os.getenv("XIAOMUSIC_SEED_RECALL_ENABLED", "false").lower() == "true"
+    )
+    max_seeds: int = int(os.getenv("XIAOMUSIC_MAX_SEEDS", "20"))
+    min_seed_score: float = float(os.getenv("XIAOMUSIC_MIN_SEED_SCORE", "2.0"))
+    seed_min_similarity: float = float(os.getenv("XIAOMUSIC_SEED_MIN_SIMILARITY", "0.3"))
+    seed_max_penalty: float = float(os.getenv("XIAOMUSIC_SEED_MAX_PENALTY", "0.5"))
+    seed_require_unheard: bool = (
+        os.getenv("XIAOMUSIC_SEED_REQUIRE_UNHEARD", "true").lower() == "true"
+    )
+    similarity_genre_weight: float = float(os.getenv("XIAOMUSIC_SIMILARITY_GENRE_WEIGHT", "0.5"))
+    similarity_language_weight: float = float(os.getenv("XIAOMUSIC_SIMILARITY_LANGUAGE_WEIGHT", "0.2"))
+    similarity_artist_weight: float = float(os.getenv("XIAOMUSIC_SIMILARITY_ARTIST_WEIGHT", "0.15"))
+    similarity_album_weight: float = float(os.getenv("XIAOMUSIC_SIMILARITY_ALBUM_WEIGHT", "0.1"))
+    similarity_era_weight: float = float(os.getenv("XIAOMUSIC_SIMILARITY_ERA_WEIGHT", "0.05"))
+    exclusion_days: int = int(os.getenv("XIAOMUSIC_EXCLUSION_DAYS", "30"))
+    new_release_explore_count: int = int(os.getenv("XIAOMUSIC_NEW_RELEASE_EXPLORE_COUNT", "5"))
+
+    # 打分与编排（前五 / 其余 MMR；混合模式乘数修正）
+    front_five_genre_cap: int = int(os.getenv("XIAOMUSIC_FRONT_FIVE_GENRE_CAP", "2"))
+    front_five_language_cap: int = int(os.getenv("XIAOMUSIC_FRONT_FIVE_LANGUAGE_CAP", "3"))
+    front_five_foreign_min: int = int(os.getenv("XIAOMUSIC_FRONT_FIVE_FOREIGN_MIN", "1"))
+    front_five_foreign_max: int = int(os.getenv("XIAOMUSIC_FRONT_FIVE_FOREIGN_MAX", "2"))
+    rest_genre_cap: int = int(os.getenv("XIAOMUSIC_REST_GENRE_CAP", "5"))
+    rest_language_cap: int = int(os.getenv("XIAOMUSIC_REST_LANGUAGE_CAP", "12"))
+    freshness_weight: float = float(os.getenv("XIAOMUSIC_FRESHNESS_WEIGHT", "0.9"))
+    diversity_weight: float = float(os.getenv("XIAOMUSIC_DIVERSITY_WEIGHT", "0.8"))
+    mmr_lambda: float = float(os.getenv("XIAOMUSIC_MMR_LAMBDA", "0.7"))
 
     def init(self):
         # 转换数据
