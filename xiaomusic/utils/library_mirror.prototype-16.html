@@ -1,0 +1,311 @@
+<!doctype html>
+<!--
+  PROTOTYPE · 一次性资产 · 关联已决工单「本地曲库镜像与定时同步」(16)
+  这不是页面长相原型，而是「数据形状 + 同步状态机」原型：用按钮把状态推过难缠情形。
+  纯逻辑在第一个 <script> 里（MirrorModel，无 DOM 依赖），可直接抬进真实模块；外壳是 throwaway。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width" />
+<title>原型 · 本地 Emby 曲库镜像的数据与同步</title>
+<style>
+  :root{--bg:#f5f6f8;--panel:#fff;--ink:#20242b;--muted:#667085;--line:#e2e5ea;--brand:#2f6fed;--brand-soft:#eaf1ff;--ok:#16824b;--ok-soft:#e6f6ed;--warn:#9a6700;--warn-soft:#fff6da;--bad:#b42318;--bad-soft:#fee4e2}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg)}
+  .wrap{max-width:1160px;margin:0 auto;padding:20px}
+  .banner{background:#20242b;color:#fff;padding:8px 20px;font-size:12px}.banner b{color:#ffd166}
+  h1{font-size:20px;margin:14px 0 6px}
+  .intro{background:var(--brand-soft);border:1px solid #cfe0ff;border-radius:10px;padding:14px 16px;margin:12px 0 20px;font-size:13px}
+  .intro b{color:#24509c}
+  .grid{display:grid;grid-template-columns:1fr 390px;gap:18px;align-items:start}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:16px}
+  .card h2{font-size:14px;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center}
+  .kv{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
+  .kv div{background:#f8f9fb;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  .kv small{display:block;color:var(--muted);font-size:11px}
+  .kv b{font-size:15px}
+  .tag{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:600}
+  .tag.ok{background:var(--ok-soft);color:var(--ok)}.tag.bad{background:var(--bad-soft);color:var(--bad)}.tag.warn{background:var(--warn-soft);color:var(--warn)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+  th{background:#f8f9fb;color:#52606f;font-size:11px;font-weight:600;white-space:nowrap}
+  td small{color:var(--muted)}
+  .changed{background:#fff6da}
+  .alerts{font-size:12px;color:var(--muted)}
+  .alerts li{margin-bottom:4px}
+  .last{background:#f8f9fb;border-left:3px solid var(--brand);padding:8px 10px;font-size:12.5px;border-radius:0 6px 6px 0}
+  .actions{display:flex;flex-wrap:wrap;gap:7px}
+  .actions button,.steps button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:7px 11px;font-size:12px;cursor:pointer;color:#344054}
+  .actions button:hover,.steps button:hover{border-color:var(--brand);color:var(--brand)}
+  .actions button.danger{color:var(--bad);border-color:#f3b4ae}
+  .actions button.reset{background:#20242b;color:#fff;border-color:#20242b}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+  .tabs button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font-size:12px;cursor:pointer;color:#52606f}
+  .tabs button.on{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+  .scenario{font-size:12.5px;color:#475467;margin:0 0 10px}
+  .steps{list-style:none;padding:0;margin:0;counter-reset:s}
+  .steps li{counter-increment:s;margin-bottom:7px;display:flex;gap:8px;align-items:flex-start}
+  .steps li::before{content:counter(s);flex:0 0 20px;height:20px;border-radius:50%;background:#e8ebef;color:#52606f;display:grid;place-items:center;font-size:11px;font-weight:600}
+  .steps li.now::before{background:var(--brand);color:#fff}
+  .steps li.done::before{background:var(--ok);color:#fff}
+  .steps button{width:100%;text-align:left}
+  .steps li.now button{border-color:var(--brand);color:var(--brand);font-weight:600}
+  .steps li.done button{opacity:.6}
+  .steps button:disabled{cursor:default}
+  .note{font-size:11.5px;color:var(--muted);margin-top:10px}
+  .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;background:#f2f4f7;border-radius:4px;padding:2px 5px;word-break:break-all}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}.kv{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="banner">🧪 <b>原型 · 一次性资产</b> · 关联工单「本地曲库镜像与定时同步」· 只读内存演示，不连真实库、不改业务代码</div>
+<div class="wrap">
+  <h1>本地 Emby 曲库镜像：数据形状与同步状态机</h1>
+  <div class="intro">
+    <b>这份原型要回答的问题：</b>本地 SQLite 曲库镜像（元数据 + 按 UserId 的用户态）作为候选池 / 相似度数据源，
+    能否正确处理「首次全量 → 每日水位增量 → 每周全量对账 → 删除墓碑 → 失败保留上一版 / 陈旧回退 v2」，
+    并且守住「Emby 是唯一权威、本地不写回」与「PR 逐次事件不进镜像、播放仍走 Emby」两条红线？
+    <br />点按钮把状态推过下面几个难缠情形；每次点击后上方状态都会重画，并标出刚变了什么。
+  </div>
+
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2>当前状态 <span id="mode-tag" class="tag ok"></span></h2>
+        <div class="kv" id="kv"></div>
+        <div style="overflow:auto"><table id="items"></table></div>
+        <div class="note">表中「派生 taste」是本地画像字段，不属于 Emby 权威字段——对账时只覆盖权威字段，派生字段保留。示例只显示 4 首，真实为全库（实测 72,577 首）。</div>
+      </div>
+      <div class="card">
+        <h2>本次动作</h2>
+        <div class="last" id="last"></div>
+        <div style="margin-top:10px" class="alerts" id="alerts"></div>
+      </div>
+      <div class="card">
+        <h2>自由试按 <small style="font-weight:400;color:var(--muted)">任意顺序、随时点</small></h2>
+        <div class="actions" id="actions"></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h2>引导剧本 <small style="font-weight:400;color:var(--muted)">点开始会重置到已知初态</small></h2>
+        <div class="tabs" id="tabs"></div>
+        <p class="scenario" id="scenario"></p>
+        <ol class="steps" id="steps"></ol>
+      </div>
+      <div class="card">
+        <h2>读这个原型时盯什么</h2>
+        <div class="alerts">
+          <ul>
+            <li>对账后，本地手改的流派<b>被 Emby 覆盖</b>，但派生 taste <b>没被抹掉</b>。</li>
+            <li>Emby 删歌 → 镜像是<b>墓碑</b>，不是物理删除，也不会回候选池。</li>
+            <li>同步失败 → <b>保留上一版</b>，仍出歌单；陈旧超过 7 天 → 整链回退 v2，不中断。</li>
+            <li>PR 事件永远在镜像之外，按 (UserId, ItemId) 关联；播放 URL 仍指向 Emby。</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============ 纯逻辑模块（无 DOM 依赖，可抬进真实代码） ============ */
+const MirrorModel = (() => {
+  const STALE_DAYS = 7;
+  const AUTHORITATIVE = ['name','genres','year','artist','album','dateCreated','runtimeTicks','path','favorite','playCount','lastPlayedDate'];
+
+  function makeEmby(){
+    return {
+      watermark: 0, changes: [],
+      items: {
+        a1:{id:'a1',name:'江南 · 某某',genres:['Mandopop'],year:2010,artist:'江南',album:'专辑A',dateCreated:'2010-05-01T08:00:00',runtimeTicks:2670000000,path:'/music/a1.mp3',ext:'mp3',favorite:false,playCount:12,lastPlayedDate:'2026-11-20T10:00:00Z',deleted:false},
+        b2:{id:'b2',name:'李志 · 热河',genres:['Mandopop','Folk'],year:2009,artist:'李志',album:'专辑B',dateCreated:'2009-09-01T08:00:00',runtimeTicks:3400000000,path:'/music/b2.mp3',ext:'mp3',favorite:true,playCount:30,lastPlayedDate:'2026-11-25T10:00:00Z',deleted:false},
+        c3:{id:'c3',name:'宇多田光 · First Love',genres:['J-Pop'],year:1999,artist:'宇多田光',album:'专辑C',dateCreated:'1999-03-01T08:00:00',runtimeTicks:3000000000,path:'/music/c3.mp3',ext:'mp3',favorite:false,playCount:1,lastPlayedDate:null,deleted:false},
+        d4:{id:'d4',name:'NewJeans · Ditto',genres:['K-Pop'],year:2022,artist:'NewJeans',album:'专辑D',dateCreated:'2022-12-01T08:00:00',runtimeTicks:1800000000,path:'/music/d4.mp3',ext:'mp3',favorite:false,playCount:0,lastPlayedDate:null,deleted:false},
+      }
+    };
+  }
+  function init(){
+    return {
+      day:0, emby:makeEmby(),
+      mirror:{version:0, watermark:0, lastSyncDay:null, items:{}},
+      prEvents:[], alerts:[], lastAction:'尚未导入——此刻候选池为空。',
+      lastResult:null, changed:[],
+    };
+  }
+  function copyAuthoritative(it){
+    const o={}; for(const k of AUTHORITATIVE) o[k]=JSON.parse(JSON.stringify(it[k]));
+    o.ext=it.ext; return o;
+  }
+  function log(s,msg){s.lastAction=msg;s.changed=[];return s;}
+
+  function reduce(s,a){
+    s=JSON.parse(JSON.stringify(s));
+    s.changed=[];
+    switch(a.type){
+      case 'FULL_IMPORT': {
+        s.mirror.items={};
+        for(const id of Object.keys(s.emby.items)){
+          const e=s.emby.items[id];
+          s.mirror.items[id]={...copyAuthoritative(e),id:id,taste:0.5,penalty:0,tombstone:false};
+        }
+        s.mirror.version=1; s.mirror.watermark=s.emby.watermark; s.mirror.lastSyncDay=s.day;
+        s.alerts=[]; s.lastResult=null;
+        return log(s,'首次全量导入完成：镜像建立，水位对齐 Emby，候选池 = 全库（不受 800~3000 采样上限）。');
+      }
+      case 'EMBY_EDIT': {
+        const e=s.emby.items[a.id]; if(!e) return log(s,'Emby 里没有这首歌。');
+        e[a.field]=a.value;
+        s.emby.watermark+=1;
+        s.emby.changes.push({seq:s.emby.watermark,id:a.id,field:a.field,value:a.value});
+        return log(s,`Emby（权威）把《${e.name}》的 ${a.label} 改成「${JSON.stringify(a.value)}」，产生一个待同步变更。`);
+      }
+      case 'EMBY_DELETE': {
+        const e=s.emby.items[a.id]; if(!e||e.deleted) return log(s,'这首歌已删除或不存在。');
+        e.deleted=true; s.emby.watermark+=1;
+        s.emby.changes.push({seq:s.emby.watermark,id:a.id,type:'delete'});
+        return log(s,`Emby 删除了《${e.name}》——镜像下次同步时应打墓碑，而不是物理删除。`);
+      }
+      case 'LOCAL_EDIT': {
+        const m=s.mirror.items[a.id]; if(!m) return log(s,'镜像里没有这首歌——先做首次全量。');
+        m[a.field]=a.value; s.changed=[a.id];
+        return log(s,`模拟一次本地手改：镜像里《${m.name}》的 ${a.label} 被改成「${JSON.stringify(a.value)}」。这是对权威的违背，下一次对账应覆盖它。`);
+      }
+      case 'DAILY_SYNC': {
+        if(!s.mirror.version) return log(s,'镜像尚未建立——先做首次全量。');
+        let n=0;
+        for(const c of s.emby.changes){
+          if(c.seq<=s.mirror.watermark) continue;
+          const m=s.mirror.items[c.id];
+          if(c.type==='delete'){
+            if(m){m.tombstone=true;s.changed.push(c.id);}
+          } else if(m){
+            m[c.field]=JSON.parse(JSON.stringify(c.value)); s.changed.push(c.id);
+          }
+          s.mirror.watermark=c.seq; n++;
+        }
+        s.mirror.lastSyncDay=s.day; s.mirror.version+=1;
+        s.alerts=s.alerts.filter(x=>!x.startsWith('同步失败'));
+        return log(s,n?`每日水位增量：消费 ${n} 个 Emby 变更并 upsert，水位推进到 ${s.mirror.watermark}。派生字段不动。`
+                     :`每日水位增量：没有新变更，只刷新同步时间（第 ${s.day} 天）。`);
+      }
+      case 'WEEKLY_RECONCILE': {
+        if(!s.mirror.version) return log(s,'镜像尚未建立——先做首次全量。');
+        const ids=new Set([...Object.keys(s.emby.items),...Object.keys(s.mirror.items)]);
+        for(const id of ids){
+          const e=s.emby.items[id], m=s.mirror.items[id];
+          if(!e){ if(m){m.tombstone=true;s.changed.push(id);} continue; }
+          if(!s.mirror.items[id]) s.mirror.items[id]={...copyAuthoritative(e),id:id,taste:0.5,penalty:0,tombstone:false};
+          else if(!e.deleted){
+            for(const k of AUTHORITATIVE) s.mirror.items[id][k]=JSON.parse(JSON.stringify(e[k]));
+            s.mirror.items[id].tombstone=false; s.changed.push(id);
+          } else { s.mirror.items[id].tombstone=true; s.changed.push(id); }
+        }
+        s.mirror.watermark=s.emby.watermark; s.mirror.lastSyncDay=s.day; s.mirror.version+=1;
+        return log(s,'每周全量对账完成：所有权威字段被 Emby 覆盖（本地手改已纠正），删除项打墓碑，派生 taste / penalty 保留。');
+      }
+      case 'SYNC_FAIL': {
+        s.alerts.push(`同步失败（第 ${s.day} 天）：保留上一版镜像 v${s.mirror.version}，水位 ${s.mirror.watermark} 不动，告警已记录。`);
+        return log(s,'同步失败：按规则保留上一版镜像并告警——不打断出歌单；陈旧天数继续累计。');
+      }
+      case 'ADVANCE_DAYS': { s.day+=a.n; return log(s,`时间推进 ${a.n} 天：现在是第 ${s.day} 天。`); }
+      case 'PR_EVENT': {
+        s.prEvents.push({user:'nick',itemId:a.id,duration:a.duration||120});
+        return log(s,`来了一条 PR 播放事件，按 (UserId=nick, ItemId=${a.id}) 存到镜像之外，待与镜像关联；PR 事件永不写进镜像。`);
+      }
+      case 'QUERY': {
+        const stale=(s.mirror.version===0)||(s.mirror.lastSyncDay===null)||(s.day-s.mirror.lastSyncDay>STALE_DAYS);
+        const active=Object.values(s.mirror.items).filter(m=>!m.tombstone).length;
+        if(stale){
+          s.lastResult={source:'v2',candidates:'远程分层采样 800~3000 首',detail:`镜像陈旧 ${s.mirror.lastSyncDay===null?'—':s.day-s.mirror.lastSyncDay} 天 / 未建立，整链回退 v2；歌单照常产出。`};
+          return log(s,'生成今日歌单：镜像不可用/陈旧 → 自动回退 v2 模式，不打断出歌单，并记录 fallback_reason。');
+        }
+        s.lastResult={source:'v3-镜像',candidates:`全库 ${active} 首（示例）`,detail:'候选池与相似度都查本地镜像；播放地址仍走 Emby stream。'};
+        return log(s,`生成今日歌单：走本地镜像，候选池 = 全库 active ${active} 首（真实为全库，不受采样上限）。`);
+      }
+      case 'PLAY': {
+        const m=s.mirror.items[a.id];
+        if(!m) return log(s,'镜像里没有这首歌。');
+        s.lastResult={stream:`http://<emby-host>/emby/Audio/${a.id}/stream?Container=${m.ext}&api_key=<服务端注入>`,detail:'指向 Emby；镜像里的 Path / 扩展名只省掉一次 PlaybackInfo 调用，不让播放脱离 Emby。'};
+        return log(s,`播放《${m.name}》：URL 仍由本地拼出并指向 Emby——镜像没有改变播放链路。`);
+      }
+      case 'RESET': return init();
+      default: return s;
+    }
+  }
+  return {init,reduce,STALE_DAYS};
+})();
+</script>
+
+<script>
+/* ============ throwaway 外壳：只调用 MirrorModel，不反向写它 ============ */
+let S=MirrorModel.init();
+let scenarioIdx=0, stepIdx=0;
+const SCENARIOS=[
+  {name:'1  happy path',desc:'建立镜像 → 出歌单 → 播放一首。看候选池是不是全库、播放是不是仍走 Emby。',
+   steps:[['FULL_IMPORT','首次全量导入'],['QUERY','生成今日歌单'],['PLAY a1','播放《江南》']]},
+  {name:'2  权威与不写回',desc:'先本地手改，再让 Emby 改收藏；每日增量只带走权威变更，每周对账才覆盖本地手改——派生 taste 必须保留。',
+   steps:[['FULL_IMPORT','首次全量导入'],['LOCAL_EDIT b2','本地手改《热河》流派为 Classical'],['EMBY_EDIT c3','Emby 把《First Love》设为收藏'],['DAILY_SYNC','每日水位增量'],['WEEKLY_RECONCILE','每周全量对账']]},
+  {name:'3  删除与墓碑',desc:'Emby 删歌后先每日增量再每周对账；镜像里应留墓碑、不物理删除，也不再进候选池。',
+   steps:[['FULL_IMPORT','首次全量导入'],['EMBY_DELETE d4','Emby 删除《Ditto》'],['DAILY_SYNC','每日水位增量（打墓碑）'],['QUERY','生成今日歌单（排除墓碑）']]},
+  {name:'4  失败与陈旧回退',desc:'同步失败后保留上一版；推进 8 天让镜像超过 7 天陈旧；出歌单应自动回退 v2 且不中断，PR 事件仍独立关联。',
+   steps:[['FULL_IMPORT','首次全量导入'],['SYNC_FAIL','模拟同步失败'],['ADVANCE_DAYS 8','推进 8 天'],['PR_EVENT a1','来一条 PR 播放事件'],['QUERY','生成今日歌单 → 回退 v2']]},
+];
+function dispatch(code){
+  const [op,arg,n]=code.split(' ');
+  const map={
+    'FULL_IMPORT':{type:'FULL_IMPORT'},
+    'DAILY_SYNC':{type:'DAILY_SYNC'},
+    'WEEKLY_RECONCILE':{type:'WEEKLY_RECONCILE'},
+    'SYNC_FAIL':{type:'SYNC_FAIL'},
+    'QUERY':{type:'QUERY'},
+    'LOCAL_EDIT':{type:'LOCAL_EDIT',id:arg,field:'genres',label:'流派',value:['Classical']},
+    'EMBY_EDIT':{type:'EMBY_EDIT',id:arg,field:'favorite',label:'收藏',value:true},
+    'EMBY_DELETE':{type:'EMBY_DELETE',id:arg},
+    'PR_EVENT':{type:'PR_EVENT',id:arg,duration:120},
+    'ADVANCE_DAYS':{type:'ADVANCE_DAYS',n:+(n||arg||1)},
+    'PLAY':{type:'PLAY',id:arg},
+  };
+  S=MirrorModel.reduce(S,map[op]);
+  render();
+}
+function render(){
+  const fresh=S.mirror.version>0 && S.mirror.lastSyncDay!==null && (S.day-S.mirror.lastSyncDay<=MirrorModel.STALE_DAYS);
+  const tag=document.getElementById('mode-tag');
+  tag.textContent=(S.lastResult&&S.lastResult.source==='v2')?'链路：v2 回退':(fresh?'链路：v3 镜像':'链路：未就绪 / 陈旧');
+  tag.className='tag '+(fresh?'ok':'bad');
+  const staleDays=S.mirror.lastSyncDay===null?'—':(S.day-S.mirror.lastSyncDay);
+  document.getElementById('kv').innerHTML=`
+    <div><small>镜像版本</small><b>v${S.mirror.version}</b></div>
+    <div><small>Emby 水位 / 已消费</small><b>${S.emby.watermark} / ${S.mirror.watermark}</b></div>
+    <div><small>第几天 / 最近同步</small><b>${S.day} / ${S.mirror.lastSyncDay??'—'}</b></div>
+    <div><small>陈旧天数（>7 回退）</small><b class="${staleDays!=='—'&&staleDays>7?'':''}">${staleDays}</b></div>
+    <div><small>用户态按</small><b>UserId</b></div>
+    <div><small>PR 事件</small><b>${S.prEvents.length} 条（镜像外）</b></div>`;
+  const rows=Object.values(S.mirror.items).map(m=>{
+    const em=S.emby.items[m.id];
+    const cell=(v)=>JSON.stringify(v);
+    return `<tr><td>${m.name}${m.tombstone?' <span class="tag bad">墓碑</span>':''}</td>
+      <td${S.changed.includes(m.id)?' class="changed"':''}>${em?cell(em.genres):'—'}</td>
+      <td${S.changed.includes(m.id)?' class="changed"':''}>${cell(m.genres)}</td>
+      <td>${em?cell(em.favorite):'—'}</td><td>${cell(m.favorite)}</td>
+      <td>${m.taste.toFixed(2)}</td></tr>`;
+  }).join('');
+  document.getElementById('items').innerHTML=`<thead><tr><th>曲目</th><th>Emby 流派</th><th>镜像流派</th><th>Emby 收藏</th><th>镜像收藏</th><th>派生 taste</th></tr></thead><tbody>${rows||'<tr><td colspan="6">尚未导入</td></tr>'}</tbody>`;
+  document.getElementById('last').innerHTML=S.lastAction+(S.lastResult?`<div style="margin-top:6px">结果：<b>${S.lastResult.source}</b> · ${S.lastResult.candidates||''}${S.lastResult.detail?'<br><span style="color:var(--muted)">'+S.lastResult.detail+'</span>':''}${S.lastResult.stream?'<br><span class="code">'+S.lastResult.stream+'</span>':''}</div>`:'');
+  document.getElementById('alerts').innerHTML=S.alerts.length?`<b>告警：</b><ul>${S.alerts.map(a=>`<li>${a}</li>`).join('')}</ul>`:'<span style="color:var(--ok)">无告警</span>';
+  const acts=[['FULL_IMPORT','首次全量'],['DAILY_SYNC','每日增量'],['WEEKLY_RECONCILE','每周对账'],['SYNC_FAIL','模拟同步失败','danger'],['ADVANCE_DAYS 1','推进 1 天'],['QUERY','生成歌单'],['PLAY a1','播放《江南》'],['PR_EVENT b2','PR 播放事件'],['RESET','重置','reset']];
+  document.getElementById('actions').innerHTML=acts.map(a=>`<button class="${a[2]||''}" data-code="${a[0]}">${a[1]}</button>`).join('');
+  document.querySelectorAll('#actions button').forEach(b=>b.onclick=()=>dispatch(b.dataset.code));
+  document.getElementById('tabs').innerHTML=SCENARIOS.map((s,i)=>`<button class="${i===scenarioIdx?'on':''}" data-i="${i}">${s.name}</button>`).join('');
+  document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{scenarioIdx=+b.dataset.i;stepIdx=0;S=MirrorModel.init();render();});
+  const sc=SCENARIOS[scenarioIdx];
+  document.getElementById('scenario').textContent=sc.desc;
+  document.getElementById('steps').innerHTML=sc.steps.map((st,i)=>`<li class="${i<stepIdx?'done':i===stepIdx?'now':''}"><button data-code="${st[0]}" ${i>stepIdx?'disabled':''}>${st[1]}</button></li>`).join('');
+  document.querySelectorAll('#steps button').forEach(b=>b.onclick=()=>{dispatch(b.dataset.code);stepIdx=Math.min(stepIdx+1,sc.steps.length);render();});
+}
+render();
+</script>
+</body>
+</html>

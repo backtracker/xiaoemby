@@ -1,0 +1,252 @@
+<!doctype html>
+<!--
+  PROTOTYPE · 一次性资产 · 工单 18「今日推荐配置项页面原型」
+  问题：设置页「AI 今日推荐」区长什么样？哪些参数进页面、哪些留在配置/代码里？
+  三个结构不同的方案，用 ?variant=A|B|C 切换（底部悬浮条 / ← → 键）。
+  只读演示：输入不保存、不写库、不改业务代码。PR API Key 不出现在页面。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width" />
+<title>原型 18 · AI 今日推荐设置页</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --panel:#fff; --ink:#20242b; --muted:#6b7280; --line:#e2e5ea;
+    --brand:#2f6fed; --brand-soft:#eaf1ff; --ok:#16824b; --ok-soft:#e6f6ed;
+    --warn:#9a6700; --warn-soft:#fff6da; --grey-soft:#eef0f3;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.5 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg)}
+  .proto-banner{background:#20242b;color:#fff;padding:8px 18px;font-size:12px;letter-spacing:.02em}
+  .proto-banner b{color:#ffd166}
+  .setting-header{background:#fff;border-bottom:1px solid var(--line)}
+  .header-inner{max-width:1180px;margin:auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between}
+  .header-inner h2{margin:0;font-size:18px}
+  .header-buttons button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:7px 12px;margin-left:8px;cursor:default;font-size:13px}
+  .header-buttons .save-button{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .layout{max-width:1180px;margin:20px auto;padding:0 20px;display:grid;grid-template-columns:176px 1fr;gap:22px;align-items:start}
+  .side-nav{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;position:sticky;top:12px}
+  .side-nav a{display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:6px;color:#444;text-decoration:none;font-size:13px}
+  .side-nav a .dot{width:6px;height:6px;border-radius:50%;background:#c7ccd4}
+  .side-nav a.on{background:var(--brand-soft);color:var(--brand);font-weight:600}
+  .side-nav a.on .dot{background:var(--brand)}
+  .nav-sep{height:1px;background:var(--line);margin:6px 4px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin-bottom:18px}
+  .panel h2{margin:0 0 4px;font-size:17px}
+  .panel h2 .num{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:6px;background:var(--brand-soft);color:var(--brand);font-size:12px;margin-right:8px}
+  .desc{color:var(--muted);margin:0 0 16px;font-size:13px}
+  .field{margin-bottom:13px}
+  .field label{display:block;font-weight:600;font-size:13px;margin-bottom:5px}
+  .field input,.field select{border:1px solid #cfd4dc;border-radius:6px;padding:7px 9px;font-size:13px;background:#fff;min-width:0;width:100%;max-width:280px}
+  .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 16px}
+  .grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  .hint{color:var(--muted);font-size:12px;margin-top:3px}
+  .mt{margin-top:8px}
+  .note{font-size:12px;padding:10px 12px;border-radius:6px;margin-top:12px}
+  .note.info{background:var(--brand-soft);color:#24509c}
+  .chip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;white-space:nowrap;vertical-align:middle}
+  .chip.pr{background:var(--ok-soft);color:var(--ok)}
+  .chip.mix{background:var(--warn-soft);color:var(--warn)}
+  .chip.all{background:var(--grey-soft);color:#52606f}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:2px 0 16px}
+  /* Variant A: accordion */
+  details.adv{border:1px solid var(--line);border-radius:8px;margin-bottom:10px;overflow:hidden}
+  details.adv>summary{cursor:pointer;padding:11px 14px;background:#f8f9fb;font-weight:600;font-size:13px;display:flex;justify-content:space-between;align-items:center}
+  details.adv>.body{padding:14px}
+  details.adv[open]>summary{border-bottom:1px solid var(--line)}
+  .hidden-list li{margin-bottom:8px;font-size:12.5px}
+  .hidden-list b{color:#8a3340}
+  /* Variant B: wizard */
+  .steps{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+  .steps button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;cursor:pointer;font-size:12px;color:#52606f}
+  .steps button.on{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+  .step-head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:14px}
+  .step-head h3{margin:0;font-size:15px}
+  .step-nav{display:flex;justify-content:space-between;margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
+  .btn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:7px 14px;cursor:pointer;font-size:13px}
+  .btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:16px}
+  .seg button{border:0;background:#fff;padding:7px 16px;cursor:pointer;font-size:12px;color:#52606f}
+  .seg button.on{background:var(--brand-soft);color:var(--brand);font-weight:600}
+  /* Variant C: matrix */
+  .matrix-wrap{display:grid;grid-template-columns:1fr 210px;gap:18px;align-items:start}
+  table.matrix{border-collapse:collapse;width:100%;font-size:12.5px}
+  table.matrix th,table.matrix td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
+  table.matrix th{background:#f8f9fb;font-size:11px;color:#52606f;white-space:nowrap}
+  table.matrix tr.group td{background:var(--brand-soft);font-weight:700;color:var(--brand);font-size:12px}
+  table.matrix code{background:#f2f4f7;border-radius:3px;padding:1px 4px;font-size:11.5px}
+  table.matrix td.val{white-space:nowrap}
+  .preview{border:1px solid var(--line);border-radius:8px;padding:12px;background:#fbfcfd;font-size:12px}
+  .preview h4{margin:0 0 10px;font-size:13px}
+  .preview .row{display:flex;align-items:center;gap:6px;margin:6px 0}
+  .preview .box{border:1px solid #cfd4dc;border-radius:6px;padding:6px 8px;background:#fff;flex:1;text-align:center}
+  .preview .arrow{color:var(--muted)}
+  .preview .out{border-radius:6px;padding:6px 8px;text-align:center;color:#fff;font-size:11px}
+  .preview .out.pr{background:var(--ok)} .preview .out.mix{background:#b8860b} .preview .out.v2{background:#7b8794}
+  /* floating switcher */
+  .switcher{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;
+    background:#20242b;color:#fff;border-radius:999px;padding:7px 10px;box-shadow:0 6px 22px #0004;z-index:50;font-size:12px}
+  .switcher button{width:26px;height:26px;border:0;border-radius:50%;background:#3a4049;color:#fff;cursor:pointer;font-size:15px;line-height:1}
+  .switcher .label{min-width:180px;text-align:center}
+  .switcher .label b{color:#ffd166}
+  .switcher .kbd{color:#9aa2ad;font-size:10px}
+  @media(max-width:900px){.layout{grid-template-columns:1fr}.side-nav{display:none}.matrix-wrap{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="proto-banner">🧪 <b>原型 · 一次性资产</b> · 工单 18 · 仅供反应，不改业务代码 · 输入值不会保存 · PR API Key 不在页面</div>
+<header class="setting-header" role="banner">
+  <div class="header-inner">
+    <h2><span>XiaoEmby 设置</span></h2>
+    <div class="header-buttons">
+      <button aria-label="返回首页">⌂ 返回首页</button>
+      <button class="save-button" aria-label="保存配置">💾 保存配置（原型中无效）</button>
+    </div>
+  </div>
+</header>
+<div class="layout" id="setting" role="main">
+  <nav class="side-nav" aria-label="设置分类">
+    <a href="#"><span class="dot"></span>Emby 服务</a>
+    <a href="#"><span class="dot"></span>小爱设备</a>
+    <a href="#"><span class="dot"></span>语音交互</a>
+    <a href="#"><span class="dot"></span>播放与搜索</a>
+    <a class="on" href="#"><span class="dot"></span>AI 今日推荐</a>
+    <a href="#"><span class="dot"></span>系统</a>
+    <a href="#"><span class="dot"></span>定时开关语音口令</a>
+    <div class="nav-sep"></div>
+    <a href="#"><span class="dot"></span>功能操作</a>
+  </nav>
+  <main class="content">
+    <div id="variant-root"></div>
+  </main>
+</div>
+
+<script>
+/* ---- 单一数据源：三个方案共用同一批参数，只换结构与层级 ---- */
+const GROUPS = [
+  { id:'llm', title:'LLM 连接（现有，原样保留）', note:'已有字段，位置不变；仅重排进第一组。', fields:[
+    {id:'enable_daily_recommend', label:'启用今日推荐', type:'select', value:'false', options:['false','true'], mode:'all'},
+    {id:'llm_endpoint', label:'LLM API 地址', type:'text', ph:'http://127.0.0.1:8080/v1', mode:'all'},
+    {id:'llm_model', label:'模型名称', type:'text', ph:'qwen-plus', mode:'all'},
+    {id:'llm_api_key', label:'LLM API Key', type:'password', ph:'sk-…', mode:'all'},
+    {id:'llm_max_tokens', label:'输出预算（max_tokens）', type:'number', value:6000, min:1, step:100, hint:'推理模型思考会占用预算；太小会导致生成失败并回退本地混歌', mode:'all'},
+    {id:'llm_supports_schema', label:'LLM 支持 json_schema', type:'select', value:'false', options:['false (DeepSeek 等)','true'], mode:'all'},
+  ]},
+  { id:'shape', title:'歌单规模与排序（v3 新形态）', note:'PR 模式才改用新排序；v2 / 混合模式沿用旧编排。', fields:[
+    {id:'daily_recommend_count', label:'推荐歌曲数量', type:'number', value:20, min:10, max:40, step:1, mode:'all'},
+    {id:'explore_ratio', label:'探索比例', type:'number', value:0.15, min:0, max:1, step:0.05, hint:'沿用 0.15；v3 不引入 50/35/15 草案', mode:'all'},
+    {id:'freshness', label:'新鲜度起点', type:'number', value:0.9, min:0, max:1, step:0.05, hint:'07 拍板的起点值，仅 PR 模式生效', mode:'pr'},
+    {id:'diversity', label:'多样性起点', type:'number', value:0.8, min:0, max:1, step:0.05, mode:'pr'},
+    {id:'mmr_lambda', label:'MMR λ（相关 vs 多样）', type:'number', value:0.7, min:0, max:1, step:0.05, hint:'λ 越大越偏相关；与新鲜度/多样性同为起点值', mode:'pr'},
+    {id:'top5_genre_cap', label:'前五·每流派上限', type:'number', value:2, min:1, max:5, step:1, hint:'前五重点区：每流派≤2、每语言≤3、非华语 1–2 首、≥1 首没听过', mode:'pr'},
+    {id:'rest_genre_cap', label:'其余·每流派上限', type:'number', value:5, min:1, max:20, step:1, hint:'其余 15 首：流派≤5/20、语言≤12/20', mode:'pr'},
+  ]},
+  { id:'tier', title:'档位判定门槛（决定是否走 PR 数据）', note:'05 定：跨度 + 可归属行数双条件；不按设备算归属比例。', fields:[
+    {id:'pr_full_span', label:'PR 全权 · 最小跨度（天）', type:'number', value:7, min:1, max:60, step:1, mode:'pr'},
+    {id:'pr_full_events', label:'PR 全权 · 最少可归属事件数', type:'number', value:20, min:1, max:500, step:1, mode:'pr'},
+    {id:'hybrid_span', label:'混合模式 · 最小跨度（天）', type:'number', value:1, min:1, max:30, step:1, mode:'mix'},
+    {id:'hybrid_events', label:'混合模式 · 最少可归属事件数', type:'number', value:5, min:1, max:200, step:1, mode:'mix'},
+  ]},
+  { id:'decay', title:'反馈衰减与有效播放门槛（03 / 04 / 15）', note:'完成率 ≥0.8 才计次；0.5~0.8 弱降权；<60 秒强降权且不重复计次。收藏豁免。', fields:[
+    {id:'neg_halflife', label:'负反馈半衰期（天）', type:'number', value:7, min:1, max:90, step:1, mode:'pr'},
+    {id:'pos_halflife', label:'正反馈半衰期（天）', type:'number', value:14, min:1, max:180, step:1, mode:'pr'},
+    {id:'complete_ratio', label:'完成率计次门槛', type:'number', value:0.8, min:0.5, max:1, step:0.05, mode:'pr'},
+    {id:'weak_ratio', label:'弱降权门槛（完成率）', type:'number', value:0.5, min:0, max:1, step:0.05, mode:'pr'},
+    {id:'short_play_sec', label:'极短播放阈值（秒）', type:'number', value:60, min:10, max:300, step:10, hint:'强软降权；跨天 penalty', mode:'pr'},
+  ]},
+  { id:'rules', title:'高级生成规则（10 / 11 / 12 / 13）', note:'默认折叠；均为 PR 模式专属，混合 / v2 模式不生效。', fields:[
+    {id:'revisit_per_day', label:'回访注入（首/天）', type:'number', value:1, min:1, max:2, step:1, hint:'10：到期触发，每日最多 1–2 首进前五重点区', mode:'pr'},
+    {id:'revisit_exclude_days', label:'回访排除窗（天）', type:'number', value:30, min:7, max:180, step:1, hint:'独立于 penalty 衰减', mode:'pr'},
+    {id:'immersion_days', label:'偶发沉浸 · 窗口（天）', type:'number', value:7, min:1, max:30, step:1, mode:'pr'},
+    {id:'immersion_plays', label:'偶发沉浸 · 最少有效播放', type:'number', value:5, min:1, max:30, step:1, hint:'11：7 天内某艺人 ≥5 次且占 ≥50%、此前 180 天 ≤1 次', mode:'pr'},
+    {id:'immersion_share', label:'偶发沉浸 · 占比门槛', type:'number', value:0.5, min:0, max:1, step:0.05, mode:'pr'},
+    {id:'immersion_prior_days', label:'偶发沉浸 · 此前冷静期（天）', type:'number', value:180, min:30, max:730, step:30, mode:'pr'},
+    {id:'familiar_total_plays', label:'熟悉歌手 · 累计播放次数', type:'number', value:20, min:5, max:200, step:1, hint:'12：累计≥20 次 或 收藏≥2 首 或 30 天≥3 次；每歌手最多 2 首入池', mode:'pr'},
+    {id:'familiar_favorites', label:'熟悉歌手 · 收藏首数', type:'number', value:2, min:1, max:20, step:1, mode:'pr'},
+    {id:'familiar_recent_plays', label:'熟悉歌手 · 近 30 天有效播放', type:'number', value:3, min:1, max:30, step:1, mode:'pr'},
+    {id:'familiar_cap', label:'每歌手入池上限（首）', type:'number', value:2, min:1, max:5, step:1, mode:'pr'},
+    {id:'seed_similarity', label:'启用种子相似召回', type:'select', value:'false', options:['false','true'], hint:'13：独立召回源并入主候选池，不设专属轨道/配额；离线 A/B 无效则默认关', mode:'pr'},
+    {id:'sim_genre', label:'sim 权重 · 流派', type:'number', value:0.5, min:0, max:1, step:0.05, hint:'13：流派 0.5 / 语言 0.2 / 艺人 0.15 / 专辑 0.1 / 年代 0.05', mode:'pr'},
+    {id:'sim_language', label:'sim 权重 · 语言', type:'number', value:0.2, min:0, max:1, step:0.05, mode:'pr'},
+    {id:'sim_artist', label:'sim 权重 · 艺人', type:'number', value:0.15, min:0, max:1, step:0.05, mode:'pr'},
+    {id:'sim_album', label:'sim 权重 · 专辑', type:'number', value:0.1, min:0, max:1, step:0.05, mode:'pr'},
+    {id:'sim_decade', label:'sim 权重 · 年代', type:'number', value:0.05, min:0, max:1, step:0.05, mode:'pr'},
+  ]},
+];
+const HIDDEN = [
+  ['PR API Key','管理员级非官方接口，凭据只在服务端配置；避免明文落到设置页与日志。'],
+  ['当天冻结 / 失败静默回退','行为约束，不是用户可调旋钮；暴露后容易被误关导致歌单中断。'],
+  ['原始 PR 事件保留策略（永久保留）','数据治理口径，不随歌单调参变化。'],
+  ['taste_vector / base_score / 三张 penalty 表 / confidence 收敛','内部结构；暴露只会误导，且改动需改代码而非页面。'],
+  ['累计 / 窗口 / 曝光次数的来源与计次口径','内部实现细节，已由 09 / 15 拍板，不需要用户决策。'],
+  ['客户端 / 设备过滤','账号维度统一取数，设备只作展示背景；不提供按设备筛选。'],
+  ['候选池分桶规则、生成时机（cron / 口令）','尚未拍板，见 map「Not yet specified」；不提前暴露半成品旋钮。'],
+];
+const CHIP = {pr:['仅 PR 模式生效','pr'], mix:['混合模式门槛','mix'], all:['全局','all']};
+function chip(mode){const [t,c]=CHIP[mode];return `<span class="chip ${c}">${t}</span>`;}
+function control(f){
+  let c;
+  if(f.type==='select') c=`<select>${f.options.map(o=>`<option${o.startsWith(String(f.value))?' selected':''}>${o}</option>`).join('')}</select>`;
+  else c=`<input type="${f.type}" ${f.type==='number'?`min="${f.min??''}" max="${f.max??''}" step="${f.step??''}"`:''} value="${f.value??''}" placeholder="${f.ph??''}" />`;
+  return `<div class="field"><label>${f.label} ${chip(f.mode)}</label>${c}${f.hint?`<div class="hint">${f.hint}</div>`:''}</div>`;
+}
+function hiddenBlock(){return `<details class="adv"><summary>明确不露到页面的参数（${HIDDEN.length} 项）<span>理由</span></summary><div class="body"><ul class="hidden-list">${HIDDEN.map(([k,v])=>`<li><b>${k}</b> — ${v}</li>`).join('')}</ul></div></details>`;}
+function legend(){return `<div class="legend"><span>${chip('all')} 所有模式可见</span><span>${chip('pr')} 混合 / v2 模式灰显或不显示</span><span>${chip('mix')} 仅用于判定是否进入混合模式</span></div>`;}
+function shell(inner){return `<section class="panel" id="sec-ai"><h2><span class="num">5</span>AI 今日推荐</h2><p class="desc">按天生成推荐歌单，使用 OpenAI 兼容的 LLM 接口。v3 新增行为画像参数，仅 PR 模式生效者如下标注。</p>${legend()}${inner}${hiddenBlock()}<div class="note info">原型说明：输入值不保存；所有阈值为方案里的拍板起点值，实现另起 effort。</div></section>`;}
+
+/* 方案 A：分组折叠，渐进披露 —— 最接近现有 setting.html */
+function variantA(){
+  return shell(GROUPS.map((g,i)=>`<details class="adv" ${i<2?'open':''}><summary><span>${g.title}</span>${chip(g.fields[0].mode)}</summary><div class="body"><p class="hint">${g.note}</p><div class="grid2">${g.fields.map(control).join('')}</div></div></details>`).join(''));
+}
+/* 方案 B：分步向导 + 简单/高级切换 —— 工作流式，一次一组 */
+let bStep=0, bLevel='simple';
+function variantB(){
+  const vis = bLevel==='simple' ? GROUPS.slice(0,2) : GROUPS;
+  const g = vis[Math.min(bStep,vis.length-1)];
+  return shell(`<div class="seg"><button class="${bLevel==='simple'?'on':''}" data-level="simple">简单（现有 + 歌单规模）</button><button class="${bLevel==='advanced'?'on':''}" data-level="advanced">高级（展开全部 ${GROUPS.length} 组）</button></div>
+  <div class="steps">${vis.map((x,i)=>`<button data-step="${i}" class="${i===Math.min(bStep,vis.length-1)?'on':''}">${i+1}. ${x.title.split('（')[0]}</button>`).join('')}</div>
+  <div class="step-head"><h3>${g.title}</h3>${chip(g.fields[0].mode)}</div>
+  <p class="hint">${g.note}</p>
+  <div class="grid2">${g.fields.map(control).join('')}</div>
+  <div class="step-nav"><button class="btn" data-move="-1">← 上一步</button><button class="btn primary" data-move="1">下一步 →</button></div>`);
+}
+/* 方案 C：专家参数矩阵表 + 档位预览 —— 密集表格，一次性纵览 */
+function variantC(){
+  return `<section class="panel" id="sec-ai"><h2><span class="num">5</span>AI 今日推荐 · 参数矩阵</h2><p class="desc">一次性纵览全部参数与生效条件；适合调参时对照。${legend()}</p>
+  <div class="matrix-wrap"><div><table class="matrix"><thead><tr><th>参数</th><th>默认 / 控件</th><th>范围 / 步进</th><th>生效模式</th><th>说明</th></tr></thead><tbody>
+  ${GROUPS.map(g=>`<tr class="group"><td colspan="5">${g.title} — ${g.note}</td></tr>${g.fields.map(f=>{
+    const val = f.type==='select'?`<code>${f.options[0]}</code> ▾`:`<code>${f.value??''}</code>`;
+    const rng = f.type==='number'?`${f.min??'—'} ~ ${f.max??'—'} / ${f.step??'—'}`:'文本 / 下拉';
+    return `<tr><td>${f.label}</td><td class="val">${val}</td><td>${rng}</td><td>${chip(f.mode)}</td><td>${f.hint??'—'}</td></tr>`;
+  }).join('')}`).join('')}
+  </tbody></table>${hiddenBlock()}</div>
+  <aside class="preview"><h4>档位预览（判定结果）</h4><div class="row"><div class="box">PR 事件<br><small>跨度≥7 天 / ≥20 条</small></div></div><div class="row"><span class="arrow">↓</span></div><div class="row"><div class="out pr">PR 全权 · 新排序</div></div><div class="row"><div class="box">混合<br><small>≥1 天 / ≥5 条</small></div></div><div class="row"><div class="out mix">混合 · 仅打分 ±20%</div></div><div class="row"><div class="box">不足 / 插件失效</div></div><div class="row"><div class="out v2">v2 兜底 · LastPlayedDate</div></div><div class="note info">仅展示判定形态，非可配开关。</div></aside></div></section>`;
+}
+
+const VARIANTS={A:['分组折叠（渐进披露）',variantA],B:['分步向导（工作流）',variantB],C:['参数矩阵（专家纵览）',variantC]};
+function current(){const v=new URLSearchParams(location.search).get('variant');return VARIANTS[v]?v:'A';}
+function render(){
+  const v=current();
+  document.getElementById('variant-root').innerHTML=VARIANTS[v][1]();
+  document.querySelector('.switcher .label').innerHTML=`<b>${v}</b> (${VARIANTS[v][0]})`;
+  document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{bLevel=b.dataset.level;bStep=0;render();});
+  document.querySelectorAll('.steps button').forEach(b=>b.onclick=()=>{bStep=+b.dataset.step;render();});
+  document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{
+    const n=(bLevel==='simple'?GROUPS.slice(0,2):GROUPS).length;
+    bStep=(bStep+ +b.dataset.move+n)%n; render();
+  });
+}
+function switchTo(v){const u=new URL(location.href);u.searchParams.set('variant',v);history.replaceState(null,'',u);render();}
+document.body.insertAdjacentHTML('beforeend',`<div class="switcher"><button id="prev" aria-label="上一个方案">‹</button><div class="label"></div><button id="next" aria-label="下一个方案">›</button><span class="kbd">← →</span></div>`);
+document.getElementById('prev').onclick=()=>{const k=Object.keys(VARIANTS),i=k.indexOf(current());switchTo(k[(i-1+k.length)%k.length]);};
+document.getElementById('next').onclick=()=>{const k=Object.keys(VARIANTS),i=k.indexOf(current());switchTo(k[(i+1)%k.length]);};
+document.addEventListener('keydown',e=>{
+  if(/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName))return;
+  if(e.key==='ArrowLeft')document.getElementById('prev').click();
+  if(e.key==='ArrowRight')document.getElementById('next').click();
+});
+render();
+</script>
+</body>
+</html>
