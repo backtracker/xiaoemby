@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小爱音箱操控面板</title>
+    <title>XiaoEmby · 播放器</title>
     <!-- 预加载字体文件，减少加载延迟 -->
     <link rel="preload" href="./materialicons.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="./materialiconsoutlined.woff2" as="font" type="font/woff2" crossorigin>
@@ -15,14 +15,13 @@
 
 <body class="index_page">
     <div class="player" role="main" aria-label="音乐播放器">
-        <h1>小爱音箱播放器</h1>
-        <div class="emby-info" style="margin: 10px 0; padding: 10px; background-color: #f0f0f0; border-radius: 5px; display: flex; align-items: center;">
-            <img src="/static/emby-logo.png" alt="Emby Logo" style="width: 24px; height: 24px; margin-right: 10px; vertical-align: middle;">
-            <div style="text-align: center;">
-                <strong>Emby音乐源</strong>
-                <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">当前系统使用Emby作为音乐源，所有音乐均来自您的Emby服务器</p>
+        <header class="player-header">
+            <span class="brand-mark"><img src="/static/emby-logo.png" alt="" /></span>
+            <div class="header-copy">
+                <h1>XiaoEmby</h1>
+                <p>小爱音箱播放器 · Emby 音乐源</p>
             </div>
-        </div>
+        </header>
 
         <label for="did" class="label-with-toggle">选择播放设备:
             <div class="toggle-switch-container">
@@ -49,6 +48,18 @@
         </label>
         <select id="music_name" class="song-selector" aria-label="选择歌曲">
         </select>
+
+        <div class="recommend-card">
+            <div class="recommend-copy">
+                <strong>今日推荐</strong>
+                <span>按当前账号的收听行为生成歌单，当天冻结</span>
+            </div>
+            <div class="recommend-actions">
+                <button type="button" id="gen_daily_recommend" class="recommend-btn primary">生成今日推荐</button>
+                <button type="button" id="renew_daily_recommend" class="recommend-btn">换一批</button>
+            </div>
+            <div class="recommend-status" id="recommend_status" role="status" aria-live="polite"></div>
+        </div>
 
         <div id="device-audio" class="audio-section">
             <progress class="progress" id="progress" value="0" max="100" role="progressbar" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="未播放"></progress>

@@ -10,7 +10,7 @@ def test_player_short_route_serves_player_with_base():
     html = response.body.decode("utf-8")
     assert response.status_code == 200
     assert '<base href="/static/default/">' in html
-    assert "小爱音箱播放器" in html
+    assert "XiaoEmby" in html and "小爱音箱播放器" in html
 
 
 def test_settings_short_route_serves_settings_with_base():

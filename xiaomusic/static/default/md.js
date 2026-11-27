@@ -1958,3 +1958,41 @@ $(document).ready(function () {
     }
   }, 100);
 });
+
+// ============ 今日推荐：生成 / 换一批 ============
+$(document).ready(function () {
+  function runDailyRecommend(renew) {
+    const $status = $("#recommend_status");
+    const $buttons = $(".recommend-btn").prop("disabled", true);
+    $status.removeClass("ok err").text(renew ? "正在换一批…" : "正在生成今日推荐…");
+
+    $.ajax({
+      type: "POST",
+      url: "/xiaoemby/system/generate_daily_recommend",
+      contentType: "application/json",
+      data: JSON.stringify({ renew: renew }),
+      success: function (resp) {
+        let text;
+        if (resp && resp.ok) {
+          const mode = resp.mode || "-";
+          text = (renew ? "换一批完成" : "生成完成") + "：" + (resp.count || 0) +
+            " 首，档位 " + mode + "，来源 " + (resp.source || "-");
+          if (resp.fallback_reason) text += "（回退：" + resp.fallback_reason + "）";
+          if (typeof refreshlist === "function") refreshlist();
+        } else {
+          text = "生成失败：" + ((resp && resp.reason) || "未知错误");
+        }
+        $status.removeClass("ok err").addClass(resp && resp.ok ? "ok" : "err").text(text);
+      },
+      error: function (xhr) {
+        $status.removeClass("ok err").addClass("err").text("请求失败：" + xhr.status);
+      },
+      complete: function () {
+        $buttons.prop("disabled", false);
+      },
+    });
+  }
+
+  $("#gen_daily_recommend").on("click", function () { runDailyRecommend(false); });
+  $("#renew_daily_recommend").on("click", function () { runDailyRecommend(true); });
+});

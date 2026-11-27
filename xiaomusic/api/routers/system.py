@@ -177,6 +177,30 @@ async def sync_mirror_now(request: Request):
     }
 
 
+@router.post("/xiaoemby/system/generate_daily_recommend")
+async def generate_daily_recommend_endpoint(request: Request):
+    """生成（或换一批）今日推荐歌单；只生成不播放，返回摘要。"""
+    try:
+        data = json.loads((await request.body()).decode("utf-8") or "{}")
+    except (json.JSONDecodeError, UnicodeDecodeError) as err:
+        raise HTTPException(status_code=400, detail="Invalid JSON") from err
+    renew = bool(data.get("renew", False)) if isinstance(data, dict) else False
+    try:
+        rec = await xiaomusic.generate_daily_recommend(renew=renew)
+    except Exception as err:
+        log.warning(f"生成今日推荐失败: {type(err).__name__}")
+        return {"ok": False, "reason": type(err).__name__}
+    return {
+        "ok": True,
+        "count": len(getattr(rec, "track_ids", None) or []),
+        "mode": getattr(rec, "mode", ""),
+        "source": getattr(rec, "source", ""),
+        "fallback_reason": getattr(rec, "fallback_reason", ""),
+        "date": getattr(rec, "date", ""),
+        "renewals": int(getattr(rec, "renewals", 0) or 0),
+    }
+
+
 @router.get("/xiaoemby/system/mirror_sync_progress")
 async def mirror_sync_progress():
     """查询手动同步进度（只读、无凭据）。"""
