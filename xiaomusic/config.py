@@ -6,6 +6,8 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import get_type_hints
 
+from xiaomusic.utils.recommend_common import MIN_TASTE_SAMPLES, MMR_LAMBDA
+
 # 命令匹配字典
 command_action_dict = {
     # ================== 1. 系统与基础控制类 ==================
@@ -218,7 +220,7 @@ class Config:
     valid_completion: float = float(os.getenv("XIAOMUSIC_VALID_COMPLETION", "0.8"))
     weak_completion: float = float(os.getenv("XIAOMUSIC_WEAK_COMPLETION", "0.5"))
     min_window_samples: int = int(os.getenv("XIAOMUSIC_MIN_WINDOW_SAMPLES", "5"))
-    min_taste_samples: int = int(os.getenv("XIAOMUSIC_MIN_TASTE_SAMPLES", "15"))
+    min_taste_samples: int = int(os.getenv("XIAOMUSIC_MIN_TASTE_SAMPLES", str(MIN_TASTE_SAMPLES)))
     min_repeat_count: int = int(os.getenv("XIAOMUSIC_MIN_REPEAT_COUNT", "2"))
     negative_half_life_days: float = float(os.getenv("XIAOMUSIC_NEGATIVE_HALF_LIFE_DAYS", "7"))
     positive_half_life_days: float = float(os.getenv("XIAOMUSIC_POSITIVE_HALF_LIFE_DAYS", "14"))
@@ -272,7 +274,7 @@ class Config:
     rest_language_cap: int = int(os.getenv("XIAOMUSIC_REST_LANGUAGE_CAP", "12"))
     freshness_weight: float = float(os.getenv("XIAOMUSIC_FRESHNESS_WEIGHT", "0.9"))
     diversity_weight: float = float(os.getenv("XIAOMUSIC_DIVERSITY_WEIGHT", "0.8"))
-    mmr_lambda: float = float(os.getenv("XIAOMUSIC_MMR_LAMBDA", "0.7"))
+    mmr_lambda: float = float(os.getenv("XIAOMUSIC_MMR_LAMBDA", str(MMR_LAMBDA)))
 
     def init(self):
         # 转换数据

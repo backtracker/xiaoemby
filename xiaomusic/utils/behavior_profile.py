@@ -10,11 +10,23 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from math import log2
 from typing import Any
 
 from .pr_events import PREvent
+from .recommend_common import (
+    MIN_TASTE_SAMPLES,
+)
+from .recommend_common import (
+    as_day as _as_date,
+)
+from .recommend_common import (
+    exposure_is_recent as _exposure_is_recent,
+)
+from .recommend_common import (
+    library_by_id as library_by_id,
+)
 
 WINDOWS: tuple[int, ...] = (7, 30, 180)
 USER_ID_DEFAULT = "default"
@@ -28,7 +40,7 @@ class ProfileConfig:
     valid_completion: float = 0.8
     weak_completion: float = 0.5
     min_window_samples: int = 5
-    min_taste_samples: int = 15
+    min_taste_samples: int = MIN_TASTE_SAMPLES
     min_repeat_count: int = 2
     negative_half_life_days: float = 7.0
     positive_half_life_days: float = 14.0
@@ -97,29 +109,6 @@ class BehaviorProfile:
     daypart_note: str = ""
 
 
-def library_by_id(rows: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
-    """把 LibraryMirror.snapshot() 的列表摊成 id → 条目；不改原行。"""
-    result: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        key = str(row.get("id", ""))
-        if key:
-            result[key] = dict(row)
-    return result
-
-
-def _as_date(value: Any) -> date | None:
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value[:10])
-        except ValueError:
-            return None
-    return None
-
-
 def _resolve_today(events: Iterable[Any], today: Any) -> date:
     parsed = _as_date(today)
     if parsed is not None:
@@ -157,9 +146,9 @@ def _decay(age_days: int, half_life: float) -> float:
 
 
 def _clusters(days: list[date], window_days: int) -> list[list[date]]:
-    """把日期序列按 window_days 跨度切成不重叠的爆发簇（按时间升序）。"""
+    """按播放次数（含同日重播）切爆发簇：重复日期代表重复播放，不去重。"""
     result: list[list[date]] = []
-    for day in sorted(set(days)):
+    for day in sorted(days):
         if not result or (day - result[-1][0]).days >= window_days:
             result.append([day])
         else:
@@ -170,19 +159,6 @@ def _clusters(days: list[date], window_days: int) -> list[list[date]]:
 def _log_capped(count: int) -> float:
     """次数 → 权重：门控后对数封顶 min(log2(1+n), 3) / 3。"""
     return min(log2(1 + max(count, 0)), 3.0) / 3.0
-
-
-def _exposure_is_recent(value: Any, today: date, window_days: int) -> bool:
-    """推荐曝光只做跨天去重复：最近一次在排除窗内视为已推过。"""
-    if value is None or value == "" or value == 0:
-        return False
-    if isinstance(value, (int, float)):
-        return True  # 只有次数没有日期时无法证明已过期，保守当作仍在排除窗内
-    parsed = _as_date(value)
-    if parsed is None and isinstance(value, (list, tuple)):
-        dates = [day for item in value if (day := _as_date(item)) is not None]
-        parsed = max(dates) if dates else None
-    return parsed is None or (today - parsed).days < window_days
 
 
 def build_profile(
@@ -248,7 +224,13 @@ def build_profile(
         if short:
             weight = 1.0
         elif incomplete:
-            weight = min(max(completion or 0.0, 0.0), 1.0)
+            value = min(max(completion or 0.0, 0.0), 1.0)
+            if completion is not None and completion >= cfg.weak_completion:
+                # 完成率落在弱完成率与计次门槛之间：按完成度弱软降权。
+                weight = value * 0.5
+            else:
+                # 低于弱完成率：强软降权，不受完成度打折。
+                weight = 1.0
         if weight <= 0:
             continue
         decayed = weight * _decay(age, cfg.negative_half_life_days)
@@ -375,11 +357,24 @@ def build_profile(
     immersions: list[Immersion] = []
     long_term: list[str] = []
     if valid_sample_count >= cfg.min_taste_samples:
-        recent_total = sum(1 for _item_id, day, *_rest in prepared if (today_date - day).days < cfg.immersion_window_days)
+        all_play_days = [day for _item_id, day, *_rest in prepared]
+        recent_total = sum(
+            1 for day in all_play_days if (today_date - day).days < cfg.immersion_window_days
+        )
+
+        def cluster_share(cluster: list[date]) -> float:
+            """簇占比按窗口内全部播放次数算（含同日重播），长期升级同样要达标。"""
+            start = cluster[-1] - timedelta(days=max(cfg.immersion_window_days - 1, 0))
+            total = sum(1 for day in all_play_days if start <= day <= cluster[-1])
+            return len(cluster) / total if total else 0.0
+
         for artist, days in artist_days.items():
             clusters = _clusters(days, cfg.immersion_window_days)
             qualified = [
-                cluster for cluster in clusters if len(cluster) >= cfg.immersion_min_plays
+                cluster
+                for cluster in clusters
+                if len(cluster) >= cfg.immersion_min_plays
+                and cluster_share(cluster) >= cfg.immersion_min_share
             ]
             if not qualified:
                 continue

@@ -93,6 +93,211 @@ def normalize_emby_item(raw: dict[str, Any], user_id: str) -> dict[str, Any]:
     }
 
 
+def _write_authoritative_field(
+    target: dict[str, Any], field: str, value: Any, user_id: str | None = None
+) -> None:
+    """唯一权威字段写入口：用户态按 UserId 分桶，元数据写在条目顶层。"""
+    if field in AUTHORITATIVE_USER:
+        target.setdefault("users", {}).setdefault(user_id or "default", {})[field] = _clone(
+            value
+        )
+    else:
+        target[field] = _clone(value)
+
+
+def _overwrite_authoritative(target: dict[str, Any], source: dict[str, Any]) -> None:
+    """全量对账：权威字段整体覆盖，派生 taste / penalty 不参与。"""
+    for field, value in _copy_authoritative(source).items():
+        target[field] = value
+    target["tombstone"] = False
+
+
+def _reduce_emby_add(state: dict[str, Any], action: dict[str, Any]) -> None:
+    item = _clone(action["item"])
+    item.setdefault("users", {})
+    state["emby"]["items"][item["id"]] = item
+    state["emby"]["watermark"] += 1
+    state["emby"]["changes"].append(
+        {"seq": state["emby"]["watermark"], "id": item["id"], "type": "add"}
+    )
+    state["last_action"] = f"Emby 新增曲目《{item.get('name', '')}》。"
+
+
+def _reduce_full_import(state: dict[str, Any]) -> None:
+    state["mirror"]["items"] = {
+        item_id: _blank_mirror_item(item)
+        for item_id, item in state["emby"]["items"].items()
+    }
+    state["mirror"]["version"] = 1
+    state["mirror"]["watermark"] = state["emby"]["watermark"]
+    state["mirror"]["last_sync_day"] = state["day"]
+    state["alerts"] = []
+    state["last_result"] = None
+    state["last_action"] = "首次全量导入完成：镜像建立，水位对齐 Emby。"
+
+
+def _reduce_emby_edit(state: dict[str, Any], action: dict[str, Any]) -> None:
+    item = state["emby"]["items"].get(action["id"])
+    if item is None or item.get("deleted"):
+        state["last_action"] = "Emby 里没有这首歌（或已删除）。"
+        return
+    field = action["field"]
+    _write_authoritative_field(item, field, action["value"], action.get("user_id"))
+    state["emby"]["watermark"] += 1
+    state["emby"]["changes"].append(
+        {
+            "seq": state["emby"]["watermark"],
+            "id": action["id"],
+            "type": "edit",
+            "field": field,
+            "value": _clone(action["value"]),
+            "user_id": action.get("user_id"),
+        }
+    )
+    state["last_action"] = f"Emby（权威）改了《{item.get('name', '')}》的 {field}。"
+
+
+def _reduce_emby_delete(state: dict[str, Any], action: dict[str, Any]) -> None:
+    item = state["emby"]["items"].get(action["id"])
+    if item is None or item.get("deleted"):
+        state["last_action"] = "这首歌已删除或不存在。"
+        return
+    item["deleted"] = True
+    state["emby"]["watermark"] += 1
+    state["emby"]["changes"].append(
+        {"seq": state["emby"]["watermark"], "id": action["id"], "type": "delete"}
+    )
+    state["last_action"] = f"Emby 删除了《{item.get('name', '')}》。"
+
+
+def _reduce_daily_sync(state: dict[str, Any]) -> None:
+    if not state["mirror"]["version"]:
+        state["last_action"] = "镜像尚未建立——先做首次全量。"
+        return
+    changed: list[str] = []
+    consumed = 0
+    for change in sorted(state["emby"]["changes"], key=lambda item: item["seq"]):
+        if change["seq"] <= state["mirror"]["watermark"]:
+            continue
+        item_id = change["id"]
+        mirror_item = state["mirror"]["items"].get(item_id)
+        if change["type"] == "delete":
+            if mirror_item is not None:
+                mirror_item["tombstone"] = True
+                changed.append(item_id)
+        elif change["type"] == "add":
+            source_item = state["emby"]["items"].get(item_id)
+            if source_item is not None and mirror_item is None:
+                state["mirror"]["items"][item_id] = _blank_mirror_item(source_item)
+                changed.append(item_id)
+        elif mirror_item is not None:
+            _write_authoritative_field(
+                mirror_item, change["field"], change["value"], change.get("user_id")
+            )
+            changed.append(item_id)
+        state["mirror"]["watermark"] = max(
+            state["mirror"]["watermark"], change["seq"]
+        )
+        consumed += 1
+    state["changed"] = sorted(set(changed))
+    state["mirror"]["last_sync_day"] = state["day"]
+    state["mirror"]["version"] += 1
+    state["alerts"] = [
+        alert for alert in state["alerts"] if not alert.startswith("同步失败")
+    ]
+    state["last_result"] = None
+    state["last_action"] = (
+        f"每日水位增量：消费 {consumed} 个 Emby 变更，水位推进到 "
+        f"{state['mirror']['watermark']}，派生字段不动。"
+    )
+
+
+def _reduce_local_edit(state: dict[str, Any], action: dict[str, Any]) -> None:
+    item = state["mirror"]["items"].get(action["id"])
+    if item is None:
+        state["last_action"] = "镜像里没有这首歌——先做首次全量。"
+        return
+    field = action["field"]
+    _write_authoritative_field(item, field, action["value"], action.get("user_id"))
+    state["changed"] = [action["id"]]
+    state["last_action"] = (
+        f"模拟本地手改：镜像里《{item.get('name', '')}》的 {field} 被改。"
+    )
+
+
+def _reduce_weekly_reconcile(state: dict[str, Any]) -> None:
+    if not state["mirror"]["version"]:
+        state["last_action"] = "镜像尚未建立——先做首次全量。"
+        return
+    changed: list[str] = []
+    all_ids = set(state["emby"]["items"]) | set(state["mirror"]["items"])
+    for item_id in all_ids:
+        emby_item = state["emby"]["items"].get(item_id)
+        mirror_item = state["mirror"]["items"].get(item_id)
+        if emby_item is None or emby_item.get("deleted"):
+            if mirror_item is not None:
+                mirror_item["tombstone"] = True
+                changed.append(item_id)
+        elif mirror_item is None:
+            state["mirror"]["items"][item_id] = _blank_mirror_item(emby_item)
+            changed.append(item_id)
+        else:
+            _overwrite_authoritative(mirror_item, emby_item)
+            changed.append(item_id)
+    state["changed"] = sorted(set(changed))
+    state["mirror"]["watermark"] = state["emby"]["watermark"]
+    state["mirror"]["last_sync_day"] = state["day"]
+    state["mirror"]["version"] += 1
+    state["last_result"] = None
+    state["last_action"] = (
+        "每周全量对账完成：权威字段被 Emby 覆盖，删除项打墓碑，"
+        "派生 taste / penalty 保留。"
+    )
+
+
+def _reduce_sync_fail(state: dict[str, Any]) -> None:
+    version = state["mirror"]["version"]
+    state["alerts"].append(
+        f"同步失败（第 {state['day']} 天）：保留上一版镜像 v{version}，"
+        f"水位 {state['mirror']['watermark']} 不动，告警已记录。"
+    )
+    state["last_action"] = (
+        "同步失败：保留上一版镜像并告警——不打断出歌单；陈旧天数继续累计。"
+    )
+
+
+def _reduce_query(state: dict[str, Any]) -> None:
+    active = sum(
+        1 for item in state["mirror"]["items"].values() if not item.get("tombstone")
+    )
+    if is_stale(state):
+        last_day = state["mirror"]["last_sync_day"]
+        reason = (
+            "镜像未建立"
+            if last_day is None
+            else f"镜像陈旧 {state['day'] - last_day} 天"
+        )
+        state["last_result"] = {
+            "source": "v2",
+            "candidates": "远程分层采样 800~3000 首",
+            "fallback_reason": reason,
+            "detail": "镜像不可用/陈旧，整链回退 v2；歌单照常产出。",
+        }
+        state["last_action"] = (
+            "生成今日歌单：镜像不可用/陈旧 → 回退 v2 模式，"
+            "不打断出歌单，记录 source 与 fallback_reason。"
+        )
+    else:
+        state["last_result"] = {
+            "source": "镜像",
+            "candidates": f"全库 {active} 首",
+            "detail": "候选池与相似度都查本地镜像；播放地址仍走 Emby。",
+        }
+        state["last_action"] = (
+            f"生成今日歌单：走本地镜像，候选池 = 全库 active {active} 首。"
+        )
+
+
 class MirrorModel:
     """决策级状态模型的纯归约器：无 DOM、无全局状态、无 I/O。"""
 
@@ -139,213 +344,33 @@ class MirrorModel:
 
     @staticmethod
     def reduce(state: dict[str, Any], action: dict[str, Any]) -> dict[str, Any]:
-        s = _clone(state)
-        s["changed"] = []
+        """纯归约入口：按 action 分派到具名处理器，返回值永不复用输入对象。"""
+        result = _clone(state)
+        result["changed"] = []
         kind = action.get("type")
-
         if kind == "EMBY_ADD":
-            item = _clone(action["item"])
-            item.setdefault("users", {})
-            s["emby"]["items"][item["id"]] = item
-            s["emby"]["watermark"] += 1
-            s["emby"]["changes"].append(
-                {"seq": s["emby"]["watermark"], "id": item["id"], "type": "add"}
-            )
-            s["last_action"] = f"Emby 新增曲目《{item.get('name', '')}》。"
+            _reduce_emby_add(result, action)
         elif kind == "FULL_IMPORT":
-            s["mirror"]["items"] = {
-                item_id: _blank_mirror_item(item)
-                for item_id, item in s["emby"]["items"].items()
-            }
-            s["mirror"]["version"] = 1
-            s["mirror"]["watermark"] = s["emby"]["watermark"]
-            s["mirror"]["last_sync_day"] = s["day"]
-            s["alerts"] = []
-            s["last_result"] = None
-            s["last_action"] = "首次全量导入完成：镜像建立，水位对齐 Emby。"
+            _reduce_full_import(result)
         elif kind == "EMBY_EDIT":
-            item = s["emby"]["items"].get(action["id"])
-            if item is None or item.get("deleted"):
-                s["last_action"] = "Emby 里没有这首歌（或已删除）。"
-            else:
-                field = action["field"]
-                if field in AUTHORITATIVE_USER:
-                    user_id = action.get("user_id", "default")
-                    item.setdefault("users", {}).setdefault(user_id, {})[field] = _clone(
-                        action["value"]
-                    )
-                else:
-                    item[field] = _clone(action["value"])
-                s["emby"]["watermark"] += 1
-                s["emby"]["changes"].append(
-                    {
-                        "seq": s["emby"]["watermark"],
-                        "id": action["id"],
-                        "type": "edit",
-                        "field": field,
-                        "value": _clone(action["value"]),
-                        "user_id": action.get("user_id"),
-                    }
-                )
-                s["last_action"] = f"Emby（权威）改了《{item.get('name', '')}》的 {field}。"
+            _reduce_emby_edit(result, action)
         elif kind == "EMBY_DELETE":
-            item = s["emby"]["items"].get(action["id"])
-            if item is None or item.get("deleted"):
-                s["last_action"] = "这首歌已删除或不存在。"
-            else:
-                item["deleted"] = True
-                s["emby"]["watermark"] += 1
-                s["emby"]["changes"].append(
-                    {
-                        "seq": s["emby"]["watermark"],
-                        "id": action["id"],
-                        "type": "delete",
-                    }
-                )
-                s["last_action"] = f"Emby 删除了《{item.get('name', '')}》。"
+            _reduce_emby_delete(result, action)
         elif kind == "DAILY_SYNC":
-            if not s["mirror"]["version"]:
-                s["last_action"] = "镜像尚未建立——先做首次全量。"
-            else:
-                changed: list[str] = []
-                consumed = 0
-                for change in sorted(
-                    s["emby"]["changes"], key=lambda c: c["seq"]
-                ):
-                    if change["seq"] <= s["mirror"]["watermark"]:
-                        continue
-                    item_id = change["id"]
-                    mirror_item = s["mirror"]["items"].get(item_id)
-                    if change["type"] == "delete":
-                        if mirror_item is not None:
-                            mirror_item["tombstone"] = True
-                            changed.append(item_id)
-                    elif change["type"] == "add":
-                        source_item = s["emby"]["items"].get(item_id)
-                        if source_item is not None and mirror_item is None:
-                            s["mirror"]["items"][item_id] = _blank_mirror_item(
-                                source_item
-                            )
-                            changed.append(item_id)
-                    elif mirror_item is not None:
-                        field = change["field"]
-                        if field in AUTHORITATIVE_USER:
-                            user_id = change.get("user_id", "default")
-                            mirror_item.setdefault("users", {}).setdefault(
-                                user_id, {}
-                            )[field] = _clone(change["value"])
-                        else:
-                            mirror_item[field] = _clone(change["value"])
-                        changed.append(item_id)
-                    s["mirror"]["watermark"] = max(
-                        s["mirror"]["watermark"], change["seq"]
-                    )
-                    consumed += 1
-                s["changed"] = sorted(set(changed))
-                s["mirror"]["last_sync_day"] = s["day"]
-                s["mirror"]["version"] += 1
-                s["alerts"] = [
-                    alert for alert in s["alerts"] if not alert.startswith("同步失败")
-                ]
-                s["last_result"] = None
-                s["last_action"] = (
-                    f"每日水位增量：消费 {consumed} 个 Emby 变更，水位推进到 "
-                    f"{s['mirror']['watermark']}，派生字段不动。"
-                )
+            _reduce_daily_sync(result)
         elif kind == "LOCAL_EDIT":
-            item = s["mirror"]["items"].get(action["id"])
-            if item is None:
-                s["last_action"] = "镜像里没有这首歌——先做首次全量。"
-            else:
-                field = action["field"]
-                if field in AUTHORITATIVE_USER:
-                    user_id = action.get("user_id", "default")
-                    item.setdefault("users", {}).setdefault(user_id, {})[field] = _clone(
-                        action["value"]
-                    )
-                else:
-                    item[field] = _clone(action["value"])
-                s["changed"] = [action["id"]]
-                s["last_action"] = (
-                    f"模拟本地手改：镜像里《{item.get('name', '')}》的 {field} 被改。"
-                )
+            _reduce_local_edit(result, action)
         elif kind == "WEEKLY_RECONCILE":
-            if not s["mirror"]["version"]:
-                s["last_action"] = "镜像尚未建立——先做首次全量。"
-            else:
-                changed: list[str] = []
-                all_ids = set(s["emby"]["items"]) | set(s["mirror"]["items"])
-                for item_id in all_ids:
-                    emby_item = s["emby"]["items"].get(item_id)
-                    mirror_item = s["mirror"]["items"].get(item_id)
-                    if emby_item is None or emby_item.get("deleted"):
-                        if mirror_item is not None:
-                            mirror_item["tombstone"] = True
-                            changed.append(item_id)
-                    elif mirror_item is None:
-                        s["mirror"]["items"][item_id] = _blank_mirror_item(emby_item)
-                        changed.append(item_id)
-                    else:
-                        for field in AUTHORITATIVE_META:
-                            mirror_item[field] = _clone(emby_item.get(field))
-                        mirror_item["users"] = _clone(emby_item.get("users") or {})
-                        mirror_item["tombstone"] = False
-                        changed.append(item_id)
-                s["changed"] = sorted(set(changed))
-                s["mirror"]["watermark"] = s["emby"]["watermark"]
-                s["mirror"]["last_sync_day"] = s["day"]
-                s["mirror"]["version"] += 1
-                s["last_result"] = None
-                s["last_action"] = (
-                    "每周全量对账完成：权威字段被 Emby 覆盖，删除项打墓碑，"
-                    "派生 taste / penalty 保留。"
-                )
+            _reduce_weekly_reconcile(result)
         elif kind == "SYNC_FAIL":
-            version = s["mirror"]["version"]
-            s["alerts"].append(
-                f"同步失败（第 {s['day']} 天）：保留上一版镜像 v{version}，"
-                f"水位 {s['mirror']['watermark']} 不动，告警已记录。"
-            )
-            s["last_action"] = (
-                "同步失败：保留上一版镜像并告警——不打断出歌单；陈旧天数继续累计。"
-            )
+            _reduce_sync_fail(result)
         elif kind == "QUERY":
-            active = sum(
-                1
-                for item in s["mirror"]["items"].values()
-                if not item.get("tombstone")
-            )
-            if is_stale(s):
-                last_day = s["mirror"]["last_sync_day"]
-                reason = (
-                    "镜像未建立"
-                    if last_day is None
-                    else f"镜像陈旧 {s['day'] - last_day} 天"
-                )
-                s["last_result"] = {
-                    "source": "v2",
-                    "candidates": "远程分层采样 800~3000 首",
-                    "fallback_reason": reason,
-                    "detail": "镜像不可用/陈旧，整链回退 v2；歌单照常产出。",
-                }
-                s["last_action"] = (
-                    "生成今日歌单：镜像不可用/陈旧 → 回退 v2 模式，"
-                    "不打断出歌单，记录 source 与 fallback_reason。"
-                )
-            else:
-                s["last_result"] = {
-                    "source": "镜像",
-                    "candidates": f"全库 {active} 首",
-                    "detail": "候选池与相似度都查本地镜像；播放地址仍走 Emby。",
-                }
-                s["last_action"] = (
-                    f"生成今日歌单：走本地镜像，候选池 = 全库 active {active} 首。"
-                )
+            _reduce_query(result)
         elif kind == "ADVANCE_DAYS":
-            s["day"] += int(action.get("n", 1))
-            s["last_action"] = f"时间推进 {action.get('n', 1)} 天：现在是第 {s['day']} 天。"
-
-        return s
+            n = int(action.get("n", 1))
+            result["day"] += n
+            result["last_action"] = f"时间推进 {action.get('n', 1)} 天：现在是第 {result['day']} 天。"
+        return result
 
 
 def is_stale(state: dict[str, Any], today: int | None = None) -> bool:

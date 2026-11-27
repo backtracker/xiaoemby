@@ -20,6 +20,7 @@ import math
 import os
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from dataclasses import fields as dataclass_fields
 from datetime import date, datetime
 from enum import StrEnum
 from typing import Literal
@@ -43,6 +44,20 @@ from .candidate_pool import (
 )
 from .library_mirror import STALE_DAYS, is_stale
 from .pr_events import EmbyPRClient, PRFailure, PRReadResult, read_pr_events
+from .recommend_common import (
+    MIN_TASTE_SAMPLES,
+    MMR_LAMBDA,
+    MODE_FIELDS,
+    RecommendMode,
+    RecommendSource,
+    days_ago,
+)
+from .recommend_common import (
+    age_days as _age_days,
+)
+from .recommend_common import (
+    as_day as _as_day,
+)
 
 log = logging.getLogger("xiaomusic")
 
@@ -56,7 +71,6 @@ MAX_CATALOG_CHARS = 6000
 TASTE_WINDOW_DAYS = 45
 TASTE_HALFLIFE_DAYS = 7
 TASTE_MAX_RECORDS = 2000      # 拉取上限保护
-MIN_TASTE_SAMPLES = 15        # 低于此认为口味信号弱，以探索为主
 # 候选池：按库总量比例自适应
 CANDIDATE_RATIO = 0.03
 CANDIDATE_MIN = 800
@@ -71,7 +85,6 @@ MAX_ALBUM_CAP = 2
 MAX_GENRE_SHARE = 0.40
 MIN_DECADES = 2
 MAX_RENEWALS = 3
-MMR_LAMBDA = 0.7
 EXPLORE_RATIO = 0.15
 ANCHOR_COUNT = 2
 CLUSTER_CAP = 3
@@ -85,13 +98,14 @@ HISTORY_FILENAME = "recommend_history.json"
 SNOOZE_FILENAME = "snooze.json"
 
 # ---- v3 档位：只在生成当天判定并冻结，「换一批」沿用 ----
-MODE_PR = "pr"
-MODE_MIXED = "mixed"
-MODE_V2 = "v2"
-VALID_MODES = (MODE_PR, MODE_MIXED, MODE_V2)
+MODE_PR = RecommendMode.PR
+MODE_MIXED = RecommendMode.MIXED
+MODE_V2 = RecommendMode.V2
+VALID_MODES = MODE_FIELDS
 MIXED_MULTIPLIER_MIN = 0.8
 MIXED_MULTIPLIER_MAX = 1.2
 FRONT_FIVE_COUNT = 5
+SEED_RECALL_BONUS = 2.0
 
 
 class FallbackReason(StrEnum):
@@ -120,39 +134,7 @@ SYSTEM_PROMPT = """你是本地音乐库的「节目编排助手」。你只会�
   "exclude": {"genres": [], "artists": [], "decades": []},
   "boost": [{"value": "词汇", "weight": 1.5}],
   "weights": {"familiarity": 0.5, "novelty": 0.5, "mood_match": 0.5},
-  "soft_context": null,
-  "segments": [
-    {
-      "theme": "熟悉开场",
-      "transition": "先用几首熟悉的歌把情绪接住",
-      "intent": "comfort",
-      "share": 0.3,
-      "include": {"genres": [], "artists": [], "decades": []},
-      "exclude": {"genres": [], "artists": [], "decades": []},
-      "boost": [{"value": "词汇", "weight": 1.5}],
-      "weights": {"familiarity": 0.6, "novelty": 0.3, "mood_match": 0.5}
-    },
-    {
-      "theme": "探索中段",
-      "transition": "再往没听过的方向走一段",
-      "intent": "discover",
-      "share": 0.4,
-      "include": {"genres": [], "artists": [], "decades": []},
-      "exclude": {"genres": [], "artists": [], "decades": []},
-      "boost": [],
-      "weights": {"familiarity": 0.2, "novelty": 0.8, "mood_match": 0.5}
-    },
-    {
-      "theme": "收尾沉淀",
-      "transition": "最后回到平缓的节奏慢慢收束",
-      "intent": "mellow",
-      "share": 0.3,
-      "include": {"genres": [], "artists": [], "decades": []},
-      "exclude": {"genres": [], "artists": [], "decades": []},
-      "boost": [],
-      "weights": {"familiarity": 0.6, "novelty": 0.3, "mood_match": 0.6}
-    }
-  ]
+  "soft_context": null
 }
 
 硬性规则：
@@ -173,18 +155,13 @@ SYSTEM_PROMPT = """你是本地音乐库的「节目编排助手」。你只会�
 13. novelty 至少给 0.4；当 intent=discover 时至少给 0.7，\
 并至少包含一个不在 recently_recommended_genres 里的探索性流派。
 
-【节目分段 segments —— 这是最重要的部分】
-14. segments 必须给 3~4 段，构成一条有起承转合的情绪曲线：\
-第一段用熟悉曲目开场（familiarity 高、novelty 低），中段探索（novelty 高），\
-末段平缓收束（mellow / comfort）。不要所有段都是同一种情绪。
-15. 每段的 share 是曲目占比（0~1），所有段的 share 之和必须约等于 1。
-16. 每段 theme 是一句中文短语（≤12 字，如「熟悉开场」「探索中段」「收尾沉淀」）；\
-transition 是一句中文串联语（≤40 字），说明为什么从这里转到下一段，\
-不要出现歌名、路径或具体歌手名。
-17. 每段的 include/exclude/boost/weights 是该段的局部特征组合，\
-和顶层一样只能从 vocabulary 挑值；intent 从 intents 枚举里选。
-18. 顶层的 include/exclude/boost/weights 是全局约束，所有段都要满足；\
-段内特征在全局约束基础上叠加，用来区分各段的情绪。
+【节目分段 segments —— 已废弃，可选】
+14. segments 已废弃：不要输出该字段；顶层 recipe 是唯一的编排契约，\
+本地引擎用「前五重点区 + MMR」完成排序，不按三段式节目单选曲。
+15. 仅在兼容历史调用方时才允许 2~5 段，且 share 之和约等于 1；\
+即使给了段内特征，也只作展示，不影响选曲，不要为它额外输出顶层字段。
+16. 顶层的 include/exclude/boost/weights 才是全局约束，直接决定候选筛选与打分；\
+请把编排意图写在这里，而不是分散到各段。
 
 只输出一个 JSON 对象，不要输出其它文字。"""
 
@@ -283,7 +260,7 @@ class DailyRecommendation:
     track_ids: list[str]
     track_names: list[str]
     reason: str
-    source: str  # "llm" | "local"
+    source: str  # RecommendSource.LLM | RecommendSource.LOCAL
     date: str
     renewals: int
     tracks: list = field(default_factory=list)
@@ -294,19 +271,6 @@ class DailyRecommendation:
     # reason 只写日志与缓存，不进语音播报 / 试听日志。
     mode: str = MODE_V2
     fallback_reason: str = ""
-
-
-def _age_days(date_str, today_str: str) -> int:
-    """ISO 时间戳距今天数；Emby 的 LastPlayedDate 形如 2026-11-21T02:52:24Z。"""
-    if not date_str or not today_str:
-        return 99
-    try:
-        return max(
-            (date.fromisoformat(today_str) - date.fromisoformat(str(date_str)[:10])).days,
-            0,
-        )
-    except (ValueError, TypeError):
-        return 99
 
 
 def _artist_of(audio) -> str:
@@ -1149,12 +1113,8 @@ def _save_history(cfg, rec: DailyRecommendation) -> None:
         "decades": decades[:8],
     }
     for day in list(history):
-        try:
-            age = (date.fromisoformat(rec.date) - date.fromisoformat(day)).days
-        except ValueError:
-            del history[day]
-            continue
-        if age < 0 or age > HISTORY_DAYS:
+        age = days_ago(rec.date, day)
+        if age is None or age < 0 or age > HISTORY_DAYS:
             del history[day]
     try:
         with open(_history_path(cfg), "w", encoding="utf-8") as handle:
@@ -1206,16 +1166,9 @@ def _recommend_penalty(history: dict, today: str) -> dict:
     流派只惩罚最近一天的 top3，避免历史覆盖过宽导致全表均匀缩放。
     """
     result: dict = {"genre": {}, "track": {}, "artist": {}}
-    try:
-        today_date = date.fromisoformat(today)
-    except ValueError:
-        return result
     for day, entry in history.items():
-        try:
-            age = (today_date - date.fromisoformat(day)).days
-        except ValueError:
-            continue
-        if not 0 <= age <= HISTORY_DAYS:
+        age = days_ago(today, day)
+        if age is None or not 0 <= age <= HISTORY_DAYS:
             continue
         track_decay = 0.7 * 0.5 ** (age / 3)
         artist_decay = 0.5 * 0.5 ** (age / 5)
@@ -1234,16 +1187,9 @@ def _recommend_penalty(history: dict, today: str) -> dict:
 def _exposure_counts(history: dict, today: str, window_days: int = FRESHNESS_DAYS) -> Counter:
     """近 N 天各流派的曝光次数，供 UCB 冷门簇奖励使用。"""
     exposure: Counter = Counter()
-    try:
-        today_date = date.fromisoformat(today)
-    except ValueError:
-        return exposure
     for day, entry in history.items():
-        try:
-            age = (today_date - date.fromisoformat(day)).days
-        except ValueError:
-            continue
-        if 0 <= age <= window_days:
+        age = days_ago(today, day)
+        if age is not None and 0 <= age <= window_days:
             for genre in (entry.get("genres", []) or [])[:3]:
                 exposure[genre] += 1
     return exposure
@@ -1253,16 +1199,9 @@ def _recently_recommended(history: dict, today: str) -> dict:
     """最近 3 天推荐过的流派/歌手，用于注入 catalog 让 LLM 主动回避。"""
     genres: list = []
     artists: list = []
-    try:
-        today_date = date.fromisoformat(today)
-    except ValueError:
-        return {"genres": genres, "artists": artists}
     for day in sorted(history, reverse=True):
-        try:
-            age = (today_date - date.fromisoformat(day)).days
-        except ValueError:
-            continue
-        if age > 3:
+        age = days_ago(today, day)
+        if age is None or age > 3:
             continue
         entry = history[day]
         for genre in (entry.get("genres", []) or [])[:4]:
@@ -1310,19 +1249,6 @@ def _cfg_value(cfg, name: str, default):
     """读取配置；旧配置对象缺字段时回落到默认值，保持向后兼容。"""
     value = getattr(cfg, name, None)
     return default if value is None else value
-
-
-def _as_day(value) -> date | None:
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value[:10])
-        except ValueError:
-            return None
-    return None
 
 
 def _injected(emby, name: str):
@@ -1412,8 +1338,17 @@ def _reason_from_pr(reason) -> str:
         return str(FallbackReason.QUERY_FAILED)
 
 
-def _determine_mode(pr_result: PRReadResult | None, mirror_stale: bool, cfg, today: str) -> tuple[str, str]:
+def _determine_mode(
+    pr_result: PRReadResult | None,
+    mirror_stale: bool,
+    cfg,
+    today: str,
+    *,
+    mirror_available: bool = True,
+) -> tuple[str, str]:
     """档位只看数据跨度 + 可归属事件数；失败/不足静默回 v2 并给出结构化原因。"""
+    if not mirror_available:
+        return MODE_V2, str(FallbackReason.MIRROR_UNAVAILABLE)
     if mirror_stale:
         return MODE_V2, str(FallbackReason.MIRROR_STALE)
     if pr_result is None or not pr_result.ok:
@@ -1442,16 +1377,9 @@ def _determine_mode(pr_result: PRReadResult | None, mirror_stale: bool, cfg, tod
 def _track_exposure(history: dict, today: str, window_days: int = 30) -> dict:
     """推荐曝光只做跨天去重复：曲目 Id → 最近一次推荐日期。"""
     result: dict[str, str] = {}
-    try:
-        today_date = date.fromisoformat(today)
-    except ValueError:
-        return result
     for day, entry in history.items():
-        try:
-            age = (today_date - date.fromisoformat(day)).days
-        except ValueError:
-            continue
-        if 0 <= age <= window_days:
+        age = days_ago(today, day)
+        if age is not None and 0 <= age <= window_days:
             for track_id in (entry.get("track_ids") or []):
                 key = str(track_id)
                 if key not in result or day > result[key]:
@@ -1459,39 +1387,48 @@ def _track_exposure(history: dict, today: str, window_days: int = 30) -> dict:
     return result
 
 
+def _typed_cfg_value(cfg, name: str, default):
+    """按默认值类型转换配置：新增 dataclass 字段自动同名的 Config 字段读取。"""
+    value = _cfg_value(cfg, name, default)
+    if isinstance(default, bool):
+        return bool(value)
+    if isinstance(default, int) and not isinstance(default, bool):
+        return int(value)
+    if isinstance(default, float):
+        return float(value)
+    return value
+
+
+def _config_field_names(cls, *, skip: frozenset[str] = frozenset()) -> list[str]:
+    return [item.name for item in dataclass_fields(cls) if item.name not in skip]
+
+
 def _profile_config(cfg) -> ProfileConfig:
     base = ProfileConfig()
     return ProfileConfig(
-        **{name: _cfg_value(cfg, name, getattr(base, name)) for name in ProfileConfig.__dataclass_fields__}
+        **{
+            name: _typed_cfg_value(cfg, name, getattr(base, name))
+            for name in _config_field_names(ProfileConfig)
+        }
     )
 
 
 def _candidate_config(cfg, count: int) -> CandidateConfig:
     base = CandidateConfig()
-    return CandidateConfig(
-        weights=SimilarityWeights(
-            genre=float(_cfg_value(cfg, "similarity_genre_weight", base.weights.genre)),
-            language=float(_cfg_value(cfg, "similarity_language_weight", base.weights.language)),
-            artist=float(_cfg_value(cfg, "similarity_artist_weight", base.weights.artist)),
-            album=float(_cfg_value(cfg, "similarity_album_weight", base.weights.album)),
-            era=float(_cfg_value(cfg, "similarity_era_weight", base.weights.era)),
-        ),
-        seed_recall_enabled=bool(_cfg_value(cfg, "seed_recall_enabled", base.seed_recall_enabled)),
-        max_seeds=int(_cfg_value(cfg, "max_seeds", base.max_seeds)),
-        min_seed_score=float(_cfg_value(cfg, "min_seed_score", base.min_seed_score)),
-        seed_min_similarity=float(_cfg_value(cfg, "seed_min_similarity", base.seed_min_similarity)),
-        seed_max_penalty=float(_cfg_value(cfg, "seed_max_penalty", base.seed_max_penalty)),
-        seed_require_unheard=bool(_cfg_value(cfg, "seed_require_unheard", base.seed_require_unheard)),
-        familiar_per_artist_cap=int(
-            _cfg_value(cfg, "familiar_per_artist_cap", base.familiar_per_artist_cap)
-        ),
-        explore_ratio=float(_cfg_value(cfg, "explore_ratio", base.explore_ratio)),
-        playlist_size=count,
-        exclusion_days=int(_cfg_value(cfg, "exclusion_days", base.exclusion_days)),
-        new_release_explore_count=int(
-            _cfg_value(cfg, "new_release_explore_count", base.new_release_explore_count)
-        ),
+    values = {
+        name: _typed_cfg_value(cfg, name, getattr(base, name))
+        for name in _config_field_names(
+            CandidateConfig, skip=frozenset({"weights", "playlist_size"})
+        )
+    }
+    weights_base = SimilarityWeights()
+    weights = SimilarityWeights(
+        **{
+            name: _typed_cfg_value(cfg, f"similarity_{name}_weight", getattr(weights_base, name))
+            for name in _config_field_names(SimilarityWeights)
+        }
     )
+    return CandidateConfig(weights=weights, playlist_size=count, **values)
 
 
 def _mixed_multipliers(profile: BehaviorProfile, item_ids) -> dict:
@@ -1550,7 +1487,17 @@ def _v3_score(item_id: str, item: dict, profile: BehaviorProfile, cfg, today: st
         else 1.0
     )
     explore_bonus = 0.15 if item_id in pool.explore else 0.0
-    return max(0.0, (base + taste * 3.0 + immersion * 2.0 + explore_bonus) * (1.0 - min(penalty, 1.0) * 0.7) * fresh)
+    # 种子相似召回：开关打开时把「像明确喜欢的曲目」的相似分并入基础打分；
+    # 关闭时该通道完全不参与，选择顺序不受 seed_scores 影响。
+    seed_bonus = 0.0
+    if bool(_cfg_value(cfg, "seed_recall_enabled", False)):
+        seed_bonus = min(pool.seed_scores.get(item_id, 0.0), 1.0) * SEED_RECALL_BONUS
+    return max(
+        0.0,
+        (base + taste * 3.0 + immersion * 2.0 + explore_bonus + seed_bonus)
+        * (1.0 - min(penalty, 1.0) * 0.7)
+        * fresh,
+    )
 
 
 def pick_tracks_v3(
@@ -1580,70 +1527,95 @@ def pick_tracks_v3(
     foreign_min = int(_cfg_value(cfg, "front_five_foreign_min", 1))
     foreign_max = int(_cfg_value(cfg, "front_five_foreign_max", 2))
     unheard = set(pool.explore)
+    front_limit = min(FRONT_FIVE_COUNT, count)
     front: list[str] = []
     genre_count: Counter = Counter()
     language_count: Counter = Counter()
     artist_count: Counter = Counter()
     foreign = 0
 
-    def take(item_id: str, *, strict: bool = True) -> bool:
-        nonlocal foreign
+    def dimensions(item_id: str) -> tuple[tuple[str, ...], tuple[str, ...], str]:
         item = items[item_id]
         genres = tuple(dict.fromkeys(str(g) for g in (item.get("genres") or [])))
         artists = tuple(dict.fromkeys(str(a) for a in (item.get("artist") or [])))
-        language = language_of(item)
-        if strict:
-            if any(genre_count[g] >= genre_cap for g in genres):
-                return False
-            if language_count[language] >= language_cap:
-                return False
-            if language != "华语" and foreign >= foreign_max:
-                return False
-            if any(artist_count[a] >= PER_ARTIST_CAP for a in artists):
-                return False
-        front.append(item_id)
+        return genres, artists, language_of(item)
+
+    def violates(item_id: str) -> bool:
+        """前五硬上限：任一维度越界就拒绝，稀疏 / 单流派库也不放宽。"""
+        genres, artists, language = dimensions(item_id)
+        return (
+            any(genre_count[g] >= genre_cap for g in genres)
+            or language_count[language] >= language_cap
+            or (language != "华语" and foreign >= foreign_max)
+            or any(artist_count[a] >= PER_ARTIST_CAP for a in artists)
+        )
+
+    def apply(item_id: str, delta: int) -> None:
+        nonlocal foreign
+        genres, artists, language = dimensions(item_id)
         for genre in genres:
-            genre_count[genre] += 1
-        language_count[language] += 1
+            genre_count[genre] += delta
+            if genre_count[genre] <= 0:
+                del genre_count[genre]
+        language_count[language] += delta
+        if language_count[language] <= 0:
+            del language_count[language]
         for artist in artists:
-            artist_count[artist] += 1
+            artist_count[artist] += delta
+            if artist_count[artist] <= 0:
+                del artist_count[artist]
         if language != "华语":
-            foreign += 1
+            foreign += delta
+
+    def add(item_id: str) -> bool:
+        if item_id not in items or item_id in front or violates(item_id):
+            return False
+        front.append(item_id)
+        apply(item_id, 1)
         return True
 
+    def replace(victim: str, incoming: str) -> bool:
+        """替换路径同样先校验上限，失败时原样放回，绝不留下越界状态。"""
+        front.remove(victim)
+        apply(victim, -1)
+        if violates(incoming):
+            front.append(victim)
+            apply(victim, 1)
+            return False
+        front.append(incoming)
+        apply(incoming, 1)
+        return True
+
+    def inject(candidates) -> bool:
+        """按分数注入；名额已满时替换最低分曲目，但始终守住硬上限。"""
+        for item_id in candidates:
+            if item_id not in items or item_id in front:
+                continue
+            if len(front) < front_limit:
+                if add(item_id):
+                    return True
+                continue
+            for victim in sorted(front, key=lambda current: scores[current]):
+                if replace(victim, item_id):
+                    return True
+        return False
+
     # 回访曲目优先注入（每日 1~2 首，仍受硬屏蔽约束）。
-    for revisit_id in profile.revisit_daily:
-        if revisit_id in items and revisit_id not in front:
-            if not take(revisit_id):
-                front.append(revisit_id)
+    inject(profile.revisit_daily)
     if not (set(front) & unheard):
-        for item_id in ranked:
-            if item_id in unheard and item_id not in front:
-                if not take(item_id):
-                    front.append(item_id)
-                break
+        inject(item_id for item_id in ranked if item_id in unheard)
     for item_id in ranked:
-        if len(front) >= min(FRONT_FIVE_COUNT, count):
+        if len(front) >= front_limit:
             break
-        if item_id not in front:
-            take(item_id)
-    # 非华语下限：库里确有非华语候选时至少给 1 首。
-    if foreign < foreign_min and len(front) >= 2:
-        foreign_candidates = [
-            item_id for item_id in ranked
-            if language_of(items[item_id]) != "华语" and item_id not in front
-        ]
-        if foreign_candidates:
-            victim = min(front, key=lambda item_id: scores[item_id])
-            front[front.index(victim)] = foreign_candidates[0]
-    # 护栏放宽：不足五首时按分数补齐，保证「稳稳出歌单」。
-    if len(front) < min(FRONT_FIVE_COUNT, count):
+        add(item_id)
+    # 非华语下限：库里确有非华语候选时至少给 1 首（替换也受同一套上限约束）。
+    if foreign < foreign_min:
+        inject(item_id for item_id in ranked if language_of(items[item_id]) != "华语")
+    if len(front) < front_limit:
         for item_id in ranked:
-            if len(front) >= min(FRONT_FIVE_COUNT, count):
+            if len(front) >= front_limit:
                 break
-            if item_id not in front:
-                front.append(item_id)
-    front = front[: min(FRONT_FIVE_COUNT, count)]
+            add(item_id)
 
     # 其余按排名 + MMR，流派 ≤5/20、语言 ≤12/20（按实际曲目数缩放）。
     rest = [item_id for item_id in ranked if item_id not in front]
@@ -1676,12 +1648,11 @@ def pick_tracks_v3(
         return True
 
     selected = list(front)
-    relaxed = False
     while remaining > 0 and rest:
-        feasible = [item_id for item_id in rest if allowed(item_id)] if not relaxed else rest
+        # 没有可行候选就停：宁可少给几首，也不越过上限（稀疏库同理）。
+        feasible = [item_id for item_id in rest if allowed(item_id)]
         if not feasible:
-            relaxed = True
-            feasible = rest
+            break
         best = max(
             feasible,
             key=lambda item_id: mmr * scores[item_id]
@@ -1691,15 +1662,14 @@ def pick_tracks_v3(
             ),
         )
         rest.remove(best)
-        if allowed(best) or relaxed:
-            selected.append(best)
-            item = items[best]
-            for genre in {str(g) for g in (item.get("genres") or [])}:
-                rest_genres[genre] += 1
-            rest_languages[language_of(item)] += 1
-            for artist in {str(a) for a in (item.get("artist") or [])}:
-                rest_artists[artist] += 1
-            remaining -= 1
+        selected.append(best)
+        item = items[best]
+        for genre in {str(g) for g in (item.get("genres") or [])}:
+            rest_genres[genre] += 1
+        rest_languages[language_of(item)] += 1
+        for artist in {str(a) for a in (item.get("artist") or [])}:
+            rest_artists[artist] += 1
+        remaining -= 1
     return selected[:count]
 
 
@@ -1726,7 +1696,7 @@ def generate(cfg, emby, renew: bool = False) -> DailyRecommendation:
         return _build_result(
             tracks,
             cache.get("reason") or "",
-            cache.get("source") or "local",
+            cache.get("source") or str(RecommendSource.LOCAL),
             today,
             renewals,
             cache.get("segments") or [],
@@ -1744,13 +1714,21 @@ def generate(cfg, emby, renew: bool = False) -> DailyRecommendation:
     # 输入照常读取；档位在当天冻结，换一批只换曲目、不重新判定档位。
     pr_result = _load_pr_result(cfg, emby)
     snapshot, mirror_state = _load_mirror(cfg, emby)
+    mirror_available = bool(snapshot)
     if same_day and cache.get("mode") in VALID_MODES:
         mode = cache["mode"]
         fallback_reason = cache.get("fallback_reason") or ""
     else:
         mode, fallback_reason = _determine_mode(
-            pr_result, _mirror_is_stale(mirror_state, cfg, today), cfg, today
+            pr_result,
+            _mirror_is_stale(mirror_state, cfg, today),
+            cfg,
+            today,
+            mirror_available=mirror_available,
         )
+    # 当天冻结的档位也不能越过「镜像缺失」这条硬约束：缺镜像即回 v2。
+    if mode in (MODE_PR, MODE_MIXED) and not mirror_available:
+        mode, fallback_reason = MODE_V2, str(FallbackReason.MIRROR_UNAVAILABLE)
     profile = None
     pool = None
 
@@ -1788,7 +1766,7 @@ def generate(cfg, emby, renew: bool = False) -> DailyRecommendation:
         if not tracks:
             tracks = audios
         result = _build_result(
-            tracks, reason, "local", today, renewals,
+            tracks, reason, str(RecommendSource.LOCAL), today, renewals,
             mode=mode, fallback_reason=fallback_reason,
         )
         _save_cache(cfg, result)
@@ -1879,7 +1857,7 @@ def generate(cfg, emby, renew: bool = False) -> DailyRecommendation:
     # 「换一批」成功生成才消耗配额，失败/兜底沿用旧值
     next_renewals = renewals + 1 if renew else renewals
     result = _build_result(
-        tracks, recipe.reason, "llm", today, next_renewals, segment_metas,
+        tracks, recipe.reason, str(RecommendSource.LLM), today, next_renewals, segment_metas,
         mode=mode, fallback_reason=fallback_reason,
     )
     # reason 只进日志与缓存，不进语音播报 / 试听日志。

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from xiaomusic.utils.behavior_profile import build_profile, library_by_id
+from xiaomusic.utils.behavior_profile import ProfileConfig, build_profile, library_by_id
 from xiaomusic.utils.pr_events import LOCAL_TZ, PREvent
 
 TODAY = "2026-11-27"
@@ -184,6 +184,54 @@ def test_immersion_detects_burst_and_decays_to_zero_without_upgrade():
     later_profile = build(events, items, today=later)
     assert all(imm.artist != "李志" for imm in later_profile.immersions)
     assert "李志" not in later_profile.long_term_artists
+
+
+def test_immersion_clusters_count_plays_not_distinct_dates():
+    filler_events, filler_items = fillers(15, 10, artist_prefix="其他")
+    events = list(filler_events)
+    items = list(filler_items)
+    for index in range(5):
+        events.append(make_event(f"burst{index}", 0, hour=10))
+        items.append(make_item(f"burst{index}", ["摇滚"], ["同日爆发"]))
+
+    profile = build(events, items)
+    immersion = next(imm for imm in profile.immersions if imm.artist == "同日爆发")
+    assert immersion.burst_plays == 5
+    assert immersion.share >= 0.5
+
+
+def test_long_term_upgrade_requires_minimum_share():
+    events = []
+    items = []
+    for offset in (0, 40):
+        for index in range(6):
+            item_id = f"y{offset}_{index}"
+            events.append(make_event(item_id, offset + index, hour=10))
+            items.append(make_item(item_id, ["民谣"], ["低占比艺人"]))
+        for index in range(8):
+            item_id = f"other{offset}_{index}"
+            events.append(make_event(item_id, offset + index % 6, hour=9))
+            items.append(make_item(item_id, ["流行"], [f"其他{offset}_{index}"]))
+
+    profile = build(events, items)
+    assert "低占比艺人" not in profile.long_term_artists
+    assert all(imm.artist != "低占比艺人" for imm in profile.immersions)
+
+
+def test_weak_completion_threshold_changes_downweight_strength():
+    events = [
+        make_event("strong", 0, incomplete=True, duration=100, completion=0.4),
+        make_event("weak", 0, incomplete=True, duration=100, completion=0.7),
+    ]
+    items = [make_item("strong", ["流行"]), make_item("weak", ["流行"])]
+
+    default_profile = build(events, items)
+    strong = default_profile.penalties["track"]["strong"]
+    weak = default_profile.penalties["track"]["weak"]
+    assert strong > weak > 0
+
+    stricter = build(events, items, config=ProfileConfig(weak_completion=0.8))
+    assert stricter.penalties["track"]["weak"] > weak
 
 
 def test_two_bursts_30_days_apart_upgrade_to_long_term():

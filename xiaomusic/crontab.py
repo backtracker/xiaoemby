@@ -1,13 +1,12 @@
+import asyncio
 import json
 import os
 import shutil
-
 from dataclasses import asdict
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from zoneinfo import ZoneInfo
-from zoneinfo import ZoneInfoNotFoundError
-import datetime
 
 
 async def clean_temp_dir(config):
@@ -79,7 +78,7 @@ class Crontab:
         else:
             tz = ZoneInfo("Asia/Shanghai")
             self.log.info("未配置时区，使用默认时区: Asia/Shanghai")
-        
+
         self.scheduler = AsyncIOScheduler(timezone=tz)
 
     def start(self):
@@ -93,7 +92,7 @@ class Crontab:
             expr_parts = expression.split("#", 1)
             base_expression = expr_parts[0].strip()
             self.log.info(f"添加定时任务，表达式: {base_expression}")
-            
+
             # 显式指定时区创建CronTrigger，确保与调度器使用相同的时区
             trigger = CronTrigger.from_crontab(base_expression, timezone=self.scheduler.timezone)
 
@@ -168,12 +167,35 @@ class Crontab:
 
 
 
+    # 本地曲库镜像同步（每日水位增量 + 每周全量对账）
+    def add_job_mirror_sync(self, expression, xiaomusic, did, arg1, **kwargs):
+        kind = arg1 or "auto"
+
+        async def job():
+            from xiaomusic.utils.mirror_sync import sync_mirror
+
+            emby = getattr(xiaomusic, "emby", None)
+            options = {}
+            if emby is not None and callable(getattr(emby, "get_access_token", None)):
+                options["token"] = emby.get_access_token()
+            try:
+                result = await asyncio.to_thread(
+                    sync_mirror, xiaomusic.config, kind=kind, **options
+                )
+            except Exception as e:
+                self.log.warning(f"定时镜像同步异常: {type(e).__name__}")
+                return
+            if not result.get("ok") and not result.get("skipped"):
+                self.log.warning(f"定时镜像同步未成功: {result.get('reason', 'unknown')}")
+
+        self.add_job(expression, job)
+
     # 开启或关闭获取对话记录
     def add_job_set_pull_ask(self, expression, xiaomusic, did, arg1, **kwargs):
         async def job():
             try:
                 self.log.info(f"定时任务开始执行: set_pull_ask {arg1}")
-                
+
                 # 解析参数格式：可以是 "enable"/"disable" 或者 "enable_pull_ask|enable" 格式
                 config_param = arg1.split("|")
                 if len(config_param) == 1:
@@ -184,12 +206,12 @@ class Crontab:
                     # 新格式：config_key|state_value
                     config_key = config_param[0]
                     state_value = config_param[1]
-                
+
                 if state_value == "enable":
                     new_state = True
                 else:
                     new_state = False
-                
+
                 # 更新对应的配置项
                 if hasattr(xiaomusic.config, config_key):
                     self.log.info(f"更新配置: {config_key} = {new_state}")
@@ -197,13 +219,13 @@ class Crontab:
                 else:
                     self.log.error(f"未知的配置项: {config_key}")
                     return
-                
+
                 # 保存配置到文件
                 self.log.info("保存配置到文件...")
                 await xiaomusic.saveconfig(asdict(xiaomusic.config))
-                
+
                 self.log.info(f"定时任务执行成功: set_pull_ask {arg1}，{config_key}={new_state}")
-                
+
             except Exception as e:
                 self.log.error(f"定时任务执行失败: set_pull_ask {arg1}，错误: {e}", exc_info=True)
 
@@ -250,22 +272,21 @@ class Crontab:
 
         crontab_json = xiaomusic.config.crontab_json
         if not crontab_json:
-            self.log.info("crontab_json为空，没有定时任务需要加载")
-            return
-
-        try:
-            cron_list = json.loads(crontab_json)
-            self.log.info(f"解析到 {len(cron_list)} 个定时任务")
-            for cron in cron_list:
-                # enabled=false 的规则由设置页保存，调度器跳过
-                if cron.get("enabled") is False:
-                    continue
-                self.add_job_cron(xiaomusic, cron)
-            self.log.info("crontab reload_config ok")
-        except json.JSONDecodeError as e:
-            self.log.error(f"JSON解析失败: {e}, crontab_json: {crontab_json}")
-        except Exception as e:
-            self.log.exception(f"重新加载定时任务失败: {e}")
+            self.log.info("crontab_json为空，没有自定义定时任务需要加载")
+        else:
+            try:
+                cron_list = json.loads(crontab_json)
+                self.log.info(f"解析到 {len(cron_list)} 个定时任务")
+                for cron in cron_list:
+                    # enabled=false 的规则由设置页保存，调度器跳过
+                    if cron.get("enabled") is False:
+                        continue
+                    self.add_job_cron(xiaomusic, cron)
+                self.log.info("crontab reload_config ok")
+            except json.JSONDecodeError as e:
+                self.log.error(f"JSON解析失败: {e}, crontab_json: {crontab_json}")
+            except Exception as e:
+                self.log.exception(f"重新加载定时任务失败: {e}")
 
         # 添加定时清理临时文件任务
         if xiaomusic.config.enable_auto_clean_temp:
@@ -275,3 +296,9 @@ class Crontab:
 
             self.add_job("0 3 * * *", clean_temp_job)
             self.log.info("已添加每日凌晨3点定时清理临时文件任务")
+
+        # 镜像同步按需注册：未配置本地镜像路径时不产生任何调度副作用。
+        if getattr(xiaomusic.config, "mirror_db_path", ""):
+            self.add_job_mirror_sync("0 4 * * *", xiaomusic, did="", arg1="daily")
+            self.add_job_mirror_sync("30 4 * * 0", xiaomusic, did="", arg1="weekly")
+            self.log.info("已添加曲库镜像每日增量与每周对账任务")

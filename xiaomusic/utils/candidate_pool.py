@@ -10,10 +10,18 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import date, datetime
 from typing import Any
 
 from .behavior_profile import BehaviorProfile
+from .recommend_common import (
+    active_items,
+)
+from .recommend_common import (
+    as_day as _as_date,
+)
+from .recommend_common import (
+    exposure_is_recent as _recently_exposed,
+)
 
 # 语言以流派标签近似：Mandopop / Cantopop → 华语，J-Pop / Anime → 日语，
 # K-Pop → 韩语，纯音乐 / Instrumental → 纯音乐，其余 → 英语（Emby 无语言字段）。
@@ -126,46 +134,6 @@ class CandidatePool:
     seed_scores: dict[str, float]
     seeds: tuple[str, ...]
     total_active: int
-
-
-def _as_date(value: Any) -> date | None:
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value[:10])
-        except ValueError:
-            return None
-    return None
-
-
-def _recently_exposed(value: Any, today: date | None, window_days: int) -> bool:
-    """推荐曝光只做跨天去重复；无日期可证时保守当作仍在排除窗内。"""
-    if value is None or value == "" or value == 0:
-        return False
-    if isinstance(value, (int, float)):
-        return True
-    parsed = _as_date(value)
-    if parsed is None and isinstance(value, (list, tuple)):
-        dates = [day for entry in value if (day := _as_date(entry)) is not None]
-        parsed = max(dates) if dates else None
-    if parsed is None or today is None:
-        return True
-    return (today - parsed).days < window_days
-
-
-def active_items(snapshot: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
-    """镜像快照摊成 id → 条目：排除墓碑、按 Id 去重（首次出现为准）。"""
-    result: dict[str, dict[str, Any]] = {}
-    for row in snapshot:
-        if not isinstance(row, Mapping) or row.get("tombstone"):
-            continue
-        key = str(row.get("id", ""))
-        if key and key not in result:
-            result[key] = dict(row)
-    return result
 
 
 def new_releases(

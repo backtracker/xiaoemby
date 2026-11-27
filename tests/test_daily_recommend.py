@@ -7,8 +7,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from xiaomusic.utils.behavior_profile import build_profile, library_by_id
-from xiaomusic.utils.candidate_pool import build_candidate_pool, language_of
+from xiaomusic.utils.behavior_profile import (
+    BehaviorProfile,
+    build_profile,
+    library_by_id,
+)
+from xiaomusic.utils.candidate_pool import (
+    CandidatePool,
+    build_candidate_pool,
+    language_of,
+)
 from xiaomusic.utils.daily_recommend import (
     RecipeInvalid,
     _build_result,
@@ -23,6 +31,7 @@ from xiaomusic.utils.daily_recommend import (
     is_fresh,
     pick_tracks,
     pick_tracks_segmented,
+    pick_tracks_v3,
     snooze_track,
     validate_recipe,
 )
@@ -279,6 +288,15 @@ def test_include_dimensions_are_or():
     )
     picked = pick_tracks(recipe, candidates, catalog, 20)
     assert picked and any(a.album_artist == "甲" for a in picked)
+
+
+def test_system_prompt_marks_segments_deprecated_and_aligns_with_schema():
+    from xiaomusic.utils.daily_recommend import SYSTEM_PROMPT, recipe_schema
+
+    assert "最重要的部分" not in SYSTEM_PROMPT
+    assert "3~4 段" not in SYSTEM_PROMPT
+    assert "废弃" in SYSTEM_PROMPT or "可选" in SYSTEM_PROMPT
+    assert "segments" not in recipe_schema()["properties"]
 
 
 def test_recipe_accepts_and_validates_segments():
@@ -801,6 +819,39 @@ def test_v3_v2_fallback_when_mirror_stale(tmp_path, monkeypatch):
     assert result.fallback_reason == "mirror_stale"
 
 
+@pytest.mark.parametrize("event_count", [20, 5])
+def test_v3_v2_fallback_when_mirror_snapshot_missing(tmp_path, monkeypatch, event_count):
+    specs = [(i, [g]) for i, g in enumerate(["Mandopop", "J-Pop", "Rock"] * 8)]
+    _state, _snapshot, audios = _v3_library(specs)
+    empty_state = MirrorModel.init()
+    events = tuple(_v3_event(d % 10, str(1 + d % 2)) for d in range(event_count))
+    cfg = _v3_cfg(tmp_path)
+    emby = _v3_inject(
+        FakeEmby(audios), PRReadResult(True, None, "u1", events), empty_state, None
+    )
+    _v3_stub_llm(monkeypatch)
+
+    result = generate(cfg, emby)
+    assert result.mode == "v2"
+    assert result.fallback_reason == "mirror_unavailable"
+    assert len(result.tracks) >= 10  # 回退不打断出歌单
+
+
+def test_v3_v2_fallback_when_mirror_snapshot_empty(tmp_path, monkeypatch):
+    specs = [(i, [g]) for i, g in enumerate(["Mandopop", "J-Pop", "Rock"] * 8)]
+    state, _snapshot, audios = _v3_library(specs)
+    events = tuple(_v3_event(d % 10, str(1 + d % 2)) for d in range(20))
+    cfg = _v3_cfg(tmp_path)
+    emby = _v3_inject(
+        FakeEmby(audios), PRReadResult(True, None, "u1", events), state, []
+    )
+    _v3_stub_llm(monkeypatch)
+
+    result = generate(cfg, emby)
+    assert result.mode == "v2"
+    assert result.fallback_reason == "mirror_unavailable"
+
+
 def test_v3_mode_frozen_for_the_day_on_renew(tmp_path, monkeypatch):
     specs = [(i, [g]) for i, g in enumerate(["Mandopop", "J-Pop", "Rock"] * 8)]
     state, snapshot, audios = _v3_library(specs)
@@ -870,6 +921,74 @@ def test_v3_front_five_constraints(tmp_path, monkeypatch):
     )
     pool = build_candidate_pool(snapshot, profile, today="2026-11-22")
     assert {str(a.id) for a in front} & set(pool.explore)
+
+
+def test_seed_recall_changes_v3_pick_order_only_when_enabled():
+    items = (
+        {"id": "a", "genres": ["Mandopop"], "artist": ["甲"], "album": "专A", "year": 2000},
+        {"id": "b", "genres": ["J-Pop"], "artist": ["乙"], "album": "专B", "year": 2000},
+    )
+    profile = BehaviorProfile(base_score={"a": 2.0, "b": 2.1})
+    pool = CandidatePool(
+        items=items,
+        sources={"a": ("seed",), "b": ("genre",)},
+        explore=(),
+        seed_scores={"a": 0.9},
+        seeds=("x",),
+        total_active=2,
+    )
+    off = pick_tracks_v3(
+        pool, profile, SimpleNamespace(seed_recall_enabled=False), "2026-11-27", count=2
+    )
+    on = pick_tracks_v3(
+        pool, profile, SimpleNamespace(seed_recall_enabled=True), "2026-11-27", count=2
+    )
+    assert off[0] == "b"
+    assert on[0] == "a"
+
+
+def test_v3_caps_hold_for_mono_genre_library(tmp_path, monkeypatch):
+    specs = [(i, ["Mandopop"]) for i in range(20)]
+    state, snapshot, audios = _v3_library(specs)
+    events = tuple(_v3_event(d, 1 + d % 10) for d in range(20))
+    cfg = _v3_cfg(tmp_path)
+    emby = _v3_inject(FakeEmby(audios), PRReadResult(True, None, "u1", events), state, snapshot)
+    _v3_stub_llm(monkeypatch)
+
+    result = generate(cfg, emby)
+    assert result.mode == "pr"
+    # 单流派库里前五只能放 2 首，其余最多补到「流派 ≤5 / 20 首」的上限；
+    # 宁可少给，也不能靠放宽上限凑满 20 首。
+    all_genres = Counter(g for a in result.tracks for g in a.genres)
+    assert max(all_genres.values(), default=0) <= 5
+    assert len(result.tracks) <= 5
+
+
+def test_v3_foreign_min_replacement_respects_caps():
+    items = tuple(
+        {
+            "id": str(i),
+            "genres": ["Mandopop"],
+            "artist": [f"甲{i}"],
+            "album": f"专{i}",
+            "year": 2000,
+        }
+        for i in range(10)
+    ) + (
+        {"id": "f", "genres": ["J-Pop"], "artist": ["乙"], "album": "专F", "year": 2000},
+    )
+    profile = BehaviorProfile(base_score={str(i): 2.0 - i / 10 for i in range(10)})
+    profile.base_score["f"] = 1.0
+    pool = CandidatePool(
+        items=items, sources={}, explore=(), seed_scores={}, seeds=(), total_active=11
+    )
+    cfg = SimpleNamespace(front_five_foreign_min=1, front_five_foreign_max=2)
+    picked = pick_tracks_v3(pool, profile, cfg, "2026-11-27", count=5)
+    by_id = {item["id"]: item for item in items}
+    genres = Counter(g for item_id in picked for g in by_id[item_id]["genres"])
+    assert max(genres.values(), default=0) <= 2
+    languages = Counter(language_of(by_id[item_id]) for item_id in picked)
+    assert max(languages.values(), default=0) <= 3
 
 
 def test_v3_mixed_multipliers_bounded_and_soft():
