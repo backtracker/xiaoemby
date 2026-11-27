@@ -575,16 +575,12 @@
                         <input id="cache_dir" type="text" value="cache" />
                     </div>
                     <div class="field">
-                        <label for="temp_path">临时目录</label>
-                        <input id="temp_path" type="text" value="temp" />
-                    </div>
-                    <div class="field">
                         <label for="log_file">日志路径</label>
                         <input id="log_file" type="text" value="xiaoemby.log" />
                     </div>
                     <div class="field">
                         <label for="mirror_db_path">本地曲库镜像路径</label>
-                        <input id="mirror_db_path" type="text" value="cache/library_mirror.sqlite3" />
+                        <input id="mirror_db_path" type="text" value="conf/library_mirror.sqlite3" />
                         <div class="hint">默认已填好；若手动清空，保存时会自动恢复默认值。改路径后请先「保存配置」再到 AI 今日推荐区同步。</div>
                     </div>
                 </div>
@@ -611,11 +607,12 @@
                         </select>
                     </div>
                     <div class="field">
-                        <label for="enable_auto_clean_temp">自动清理临时目录</label>
+                        <label for="enable_auto_clean_temp">自动清理临时文件</label>
                         <select id="enable_auto_clean_temp">
                             <option value="true" selected>true</option>
                             <option value="false">false</option>
                         </select>
+                        <div class="hint">只清理缓存目录下的 tmp 子目录，不影响曲库镜像与推荐缓存。</div>
                     </div>
                 </div>
             </section>
@@ -665,7 +662,7 @@
                         <span class="material-icons" aria-hidden="true">delete_sweep</span> 清空缓存
                     </button>
                     <button id="cleantempdir" class="btn">
-                        <span class="material-icons" aria-hidden="true">folder_delete</span> 清空临时目录
+                        <span class="material-icons" aria-hidden="true">folder_delete</span> 清空临时文件
                     </button>
                     <a href="/downloadlog" class="btn">
                         <span class="material-icons" aria-hidden="true">download</span> 下载日志文件

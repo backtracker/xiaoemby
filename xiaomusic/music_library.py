@@ -583,8 +583,8 @@ class MusicLibrary:
         import os
         from urllib.parse import quote
 
-        # 获取文件的相对路径（相对于temp_path）
-        temp_path = self.config.temp_path
+        # 获取文件的相对路径（相对于缓存目录下的 tmp 子目录）
+        temp_path = self.config.temp_dir
         if file_path.startswith(temp_path):
             relative_path = os.path.relpath(file_path, temp_path)
         else:

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import requests
+
 from xiaomusic.utils.library_mirror import LibraryMirror
-from xiaomusic.utils.mirror_sync import fetch_library, sync_mirror
+from xiaomusic.utils.mirror_sync import HttpMirrorClient, fetch_library, sync_mirror
 
 
 class FakeMirrorClient:
@@ -57,6 +59,29 @@ def config(tmp_path, **overrides):
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+def test_self_signed_certificate_is_retried_without_verification():
+    class SSLFirstTransport:
+        def __init__(self):
+            self.verify_args = []
+
+        def get(self, url, **kwargs):
+            self.verify_args.append(kwargs.get("verify", "<default>"))
+            if len(self.verify_args) == 1:
+                raise requests.exceptions.SSLError("self signed")
+            return SimpleNamespace(
+                status_code=200,
+                json=lambda: {"Items": [], "TotalRecordCount": 0},
+                raise_for_status=lambda: None,
+            )
+
+    transport = SSLFirstTransport()
+    result = HttpMirrorClient(
+        "https://example.invalid", "placeholder", transport=transport
+    ).get_json("/emby/Users/u/Items", {})
+    assert result["TotalRecordCount"] == 0
+    assert transport.verify_args == ["<default>", False]
 
 
 def test_fetch_library_reports_paged_progress():

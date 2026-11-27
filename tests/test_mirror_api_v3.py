@@ -67,7 +67,7 @@ def test_config_loads_emby_api_key_from_setting_file(tmp_path):
         json.dumps(
             {
                 "emby_api_key": PLACEHOLDER,
-                "mirror_db_path": "cache/library_mirror.sqlite3",
+                "mirror_db_path": "conf/library_mirror.sqlite3",
             }
         ),
         encoding="utf-8",
@@ -78,10 +78,10 @@ def test_config_loads_emby_api_key_from_setting_file(tmp_path):
 
 
 def test_empty_mirror_path_is_refilled_on_config_and_save():
-    assert Config(mirror_db_path="").mirror_db_path == "cache/library_mirror.sqlite3"
+    assert Config(mirror_db_path="").mirror_db_path == "conf/library_mirror.sqlite3"
     cfg = Config()
     cfg.update_config({"mirror_db_path": ""})
-    assert cfg.mirror_db_path == "cache/library_mirror.sqlite3"
+    assert cfg.mirror_db_path == "conf/library_mirror.sqlite3"
 
 
 def test_getsetting_masks_emby_api_key(monkeypatch):
@@ -178,7 +178,7 @@ def install_app(monkeypatch, cfg, *, client_token=None):
 
 
 def test_sync_mirror_route_returns_compact_summary_without_secrets(monkeypatch):
-    cfg = Config(mirror_db_path="cache/library_mirror.sqlite3", emby_api_key=PLACEHOLDER)
+    cfg = Config(mirror_db_path="conf/library_mirror.sqlite3", emby_api_key=PLACEHOLDER)
     install_app(monkeypatch, cfg)
     fake = FakeSync(mirror_result())
     monkeypatch.setattr(system, "sync_mirror", fake)
@@ -195,7 +195,7 @@ def test_sync_mirror_route_returns_compact_summary_without_secrets(monkeypatch):
 
 
 def test_sync_progress_endpoint_reports_latest_fetch_and_finishes(monkeypatch):
-    cfg = Config(mirror_db_path="cache/library_mirror.sqlite3")
+    cfg = Config(mirror_db_path="conf/library_mirror.sqlite3")
     install_app(monkeypatch, cfg)
     monkeypatch.setattr(system, "sync_mirror", FakeSync(mirror_result()))
 
@@ -210,7 +210,7 @@ def test_sync_progress_endpoint_reports_latest_fetch_and_finishes(monkeypatch):
 
 
 def test_sync_mirror_route_defaults_to_auto_and_reports_resolved_kind(monkeypatch):
-    cfg = Config(mirror_db_path="cache/library_mirror.sqlite3")
+    cfg = Config(mirror_db_path="conf/library_mirror.sqlite3")
     install_app(monkeypatch, cfg)
     fake = FakeSync(mirror_result(ok=False, skipped=True, reason="unconfigured", kind="weekly"))
     monkeypatch.setattr(system, "sync_mirror", fake)
@@ -223,7 +223,7 @@ def test_sync_mirror_route_defaults_to_auto_and_reports_resolved_kind(monkeypatc
 
 
 def test_sync_mirror_route_falls_back_to_running_emby_client_token(monkeypatch):
-    cfg = Config(mirror_db_path="cache/library_mirror.sqlite3")
+    cfg = Config(mirror_db_path="conf/library_mirror.sqlite3")
     install_app(monkeypatch, cfg, client_token=PLACEHOLDER)
     fake = FakeSync(mirror_result())
     monkeypatch.setattr(system, "sync_mirror", fake)
@@ -235,7 +235,7 @@ def test_sync_mirror_route_falls_back_to_running_emby_client_token(monkeypatch):
 
 
 def test_sync_mirror_route_rejects_unknown_kind(monkeypatch):
-    cfg = Config(mirror_db_path="cache/library_mirror.sqlite3")
+    cfg = Config(mirror_db_path="conf/library_mirror.sqlite3")
     install_app(monkeypatch, cfg)
     fake = FakeSync(mirror_result())
     monkeypatch.setattr(system, "sync_mirror", fake)
@@ -248,7 +248,7 @@ def test_sync_mirror_route_rejects_unknown_kind(monkeypatch):
 
 
 def test_sync_mirror_route_structures_failures_without_leaking_details(monkeypatch):
-    cfg = Config(mirror_db_path="cache/library_mirror.sqlite3", emby_api_key=PLACEHOLDER)
+    cfg = Config(mirror_db_path="conf/library_mirror.sqlite3", emby_api_key=PLACEHOLDER)
     install_app(monkeypatch, cfg)
     boom = RuntimeError(f"connect to {PLACEHOLDER} failed")
     monkeypatch.setattr(system, "sync_mirror", FakeSync(boom))

@@ -41,16 +41,22 @@ class HttpMirrorClient:
         self._timeout = timeout
 
     def get_json(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
-        if self._transport is None:
-            import requests
+        import requests
 
+        if self._transport is None:
             self._transport = requests.Session()
-        response = self._transport.get(
-            f"{self._host}{path}",
-            params=params,
-            headers={"X-Emby-Token": self._token},
-            timeout=self._timeout,
-        )
+        kwargs = {
+            "params": params,
+            "headers": {"X-Emby-Token": self._token},
+            "timeout": self._timeout,
+        }
+        url = f"{self._host}{path}"
+        try:
+            response = self._transport.get(url, **kwargs)
+        except requests.exceptions.SSLError:
+            # 家用 Emby 常用自签证书：校验失败时仅本次降级重试，并明确告警。
+            log.warning("Emby HTTPS 证书校验失败，改用不校验证书重试（自签环境）")
+            response = self._transport.get(url, **dict(kwargs, verify=False))
         response.raise_for_status()
         return response.json()
 

@@ -84,7 +84,8 @@ command_action_dict = {
     # 4.2 终极纯歌名兜底
     r"^播(?:放)?(?P<name>.+?)$": "play",
 }
-DEFAULT_MIRROR_DB_PATH = "cache/library_mirror.sqlite3"
+# conf 目录在 Docker 中是持久化卷；cache 目录随容器重建丢失，不能作为镜像默认位置。
+DEFAULT_MIRROR_DB_PATH = "conf/library_mirror.sqlite3"
 
 
 @dataclass
@@ -113,7 +114,6 @@ class Config:
     password: str = os.getenv("MI_PASS", "")
     mi_did: str = os.getenv("MI_DID", "")  # 逗号分割支持多设备
     verbose: bool = os.getenv("XIAOMUSIC_VERBOSE", "").lower() == "true"
-    temp_path: str = os.getenv("XIAOMUSIC_TEMP_PATH", "temp")
     conf_path: str = os.getenv("XIAOMUSIC_CONF_PATH", "conf")
     cache_dir: str = os.getenv("XIAOMUSIC_CACHE_DIR", "cache")
     hostname: str = os.getenv("XIAOMUSIC_HOSTNAME", "")
@@ -401,9 +401,11 @@ class Config:
 
     @property
     def temp_dir(self):
-        if not os.path.exists(self.temp_path):
-            os.makedirs(self.temp_path)
-        return self.temp_path
+        """临时文件统一放在缓存目录下的 tmp 子目录，清理时不会波及镜像等缓存数据。"""
+        path = os.path.join(self.cache_dir, "tmp")
+        if not os.path.exists(path):
+            os.makedirs(path, exist_ok=True)
+        return path
 
 
 
