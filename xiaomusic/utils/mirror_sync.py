@@ -66,7 +66,19 @@ def build_client(cfg, *, transport: Any = None, token: str | None = None):
     return HttpMirrorClient(host, secret, transport=transport)
 
 
-def fetch_library(client, user_id: str, *, page_size: int = PAGE_SIZE) -> list[dict[str, Any]]:
+def _emit(progress, **data):
+    """进度回调绝不打断同步本身。"""
+    if progress is None:
+        return
+    try:
+        progress(data)
+    except Exception:  # 进度展示失败不应影响同步
+        pass
+
+
+def fetch_library(
+    client, user_id: str, *, page_size: int = PAGE_SIZE, progress=None
+) -> list[dict[str, Any]]:
     """分页拉取全库 Audio；只调用客户端的只读 get_json。"""
     path = f"/emby/Users/{user_id}/Items"
     params = {
@@ -79,9 +91,21 @@ def fetch_library(client, user_id: str, *, page_size: int = PAGE_SIZE) -> list[d
     first = client.get_json(path, dict(params))
     rows = list(first.get("Items") or [])
     total = int(first.get("TotalRecordCount") or 0)
+    pages = max(1, (total + page_size - 1) // page_size)
+    _emit(
+        progress, phase="fetch", page=1, pages=pages, items=len(rows), total=total
+    )
     for start in range(page_size, total, page_size):
         page = client.get_json(path, dict(params, StartIndex=start))
         rows.extend(page.get("Items") or [])
+        _emit(
+            progress,
+            phase="fetch",
+            page=start // page_size + 1,
+            pages=pages,
+            items=len(rows),
+            total=total,
+        )
     return rows
 
 
@@ -177,6 +201,7 @@ def sync_mirror(
     today: str | None = None,
     kind: str | None = None,
     mirror: LibraryMirror | None = None,
+    progress=None,
 ) -> dict[str, Any]:
     """同步本地镜像；未配置或缺少只读传输时不产生任何副作用。"""
     db_path = str(getattr(cfg, "mirror_db_path", "") or "")
@@ -194,8 +219,10 @@ def sync_mirror(
     db = mirror or LibraryMirror(db_path)
     base = None
     try:
+        _emit(progress, phase="prepare", kind=kind or "auto")
         base = _previous_state(db, cfg, user_id, day_number)
-        rows = fetch_library(client, user_id)
+        rows = fetch_library(client, user_id, progress=progress)
+        _emit(progress, phase="reconcile", items=len(rows))
         incoming = _normalized_items(rows, user_id)
         action = _resolve_kind(
             kind, base["mirror"]["version"], base["mirror"]["last_sync_day"], day_number
@@ -222,6 +249,7 @@ def sync_mirror(
             state = MirrorModel.reduce(state, {"type": "DAILY_SYNC"})
 
         db.commit(state)
+        _emit(progress, phase="done", items=len(state["mirror"]["items"]))
         return {
             "ok": True,
             "skipped": False,
@@ -232,6 +260,7 @@ def sync_mirror(
             "alerts": [],
         }
     except Exception as exc:  # 失败保留上一版：不 commit，记录告警后返回
+        _emit(progress, phase="failed", reason=type(exc).__name__)
         log.warning(f"曲库镜像同步失败，保留上一版镜像: {type(exc).__name__}")
         alerts = []
         if base is not None:

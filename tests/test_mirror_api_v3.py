@@ -77,6 +77,13 @@ def test_config_loads_emby_api_key_from_setting_file(tmp_path):
     assert Config(**loaded).emby_api_key == PLACEHOLDER
 
 
+def test_empty_mirror_path_is_refilled_on_config_and_save():
+    assert Config(mirror_db_path="").mirror_db_path == "cache/library_mirror.sqlite3"
+    cfg = Config()
+    cfg.update_config({"mirror_db_path": ""})
+    assert cfg.mirror_db_path == "cache/library_mirror.sqlite3"
+
+
 def test_getsetting_masks_emby_api_key(monkeypatch):
     cfg = Config(emby_api_key=PLACEHOLDER)
     monkeypatch.setattr(system, "xiaomusic", SimpleNamespace(getconfig=lambda: cfg))
@@ -132,8 +139,10 @@ class FakeSync:
         self.result = result
         self.calls = []
 
-    def __call__(self, cfg, *, token=None, kind=None):
+    def __call__(self, cfg, *, token=None, kind=None, progress=None):
         self.calls.append((cfg, token, kind))
+        if progress is not None:
+            progress({"phase": "fetch", "page": 1, "pages": 2, "items": 3, "total": 6})
         if isinstance(self.result, Exception):
             raise self.result
         return dict(self.result)
@@ -183,6 +192,21 @@ def test_sync_mirror_route_returns_compact_summary_without_secrets(monkeypatch):
     assert "private-host.invalid" not in json.dumps(result)
     assert "/private/mirror.sqlite3" not in json.dumps(result)
     assert fake.calls == [(cfg, PLACEHOLDER, "full")]
+
+
+def test_sync_progress_endpoint_reports_latest_fetch_and_finishes(monkeypatch):
+    cfg = Config(mirror_db_path="cache/library_mirror.sqlite3")
+    install_app(monkeypatch, cfg)
+    monkeypatch.setattr(system, "sync_mirror", FakeSync(mirror_result()))
+
+    asyncio.run(system.sync_mirror_now(request_with_json({"kind": "full"})))
+    progress = asyncio.run(system.mirror_sync_progress())
+
+    assert progress["running"] is False
+    assert progress["phase"] == "done"
+    assert progress["page"] == 1 and progress["pages"] == 2
+    assert progress["items"] == 3 and progress["total"] == 6
+    assert PLACEHOLDER not in json.dumps(progress)
 
 
 def test_sync_mirror_route_defaults_to_auto_and_reports_resolved_kind(monkeypatch):

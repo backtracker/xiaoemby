@@ -617,6 +617,26 @@ $(function () {
     const kind = $btn.data("kind") || "full";
     $result.removeClass("ok err").text("正在同步本地曲库…");
     $btn.prop("disabled", true);
+
+    const describe = function (p) {
+      if (!p) return "";
+      if (p.phase === "fetch") {
+        const count = p.total ? "（" + (p.items || 0) + "/" + p.total + " 首）" : "";
+        return "正在拉取曲库：第 " + (p.page || 0) + "/" + (p.pages || 0) + " 页" + count;
+      }
+      if (p.phase === "prepare") return "正在准备同步…";
+      if (p.phase === "reconcile") return "正在归并并写入本地镜像（" + (p.items || 0) + " 首）…";
+      if (p.phase === "done") return "写入完成，正在收尾…";
+      if (p.phase === "failed") return "同步失败，已保留上一版镜像";
+      return "正在同步本地曲库…";
+    };
+    const timer = setInterval(function () {
+      $.getJSON("/xiaoemby/system/mirror_sync_progress", function (p) {
+        const text = describe(p);
+        if (text) $result.removeClass("ok err").text(text);
+      }).fail(function () {});
+    }, 800);
+
     $.ajax({
       type: "POST",
       url: "/xiaoemby/system/sync_mirror",
@@ -638,6 +658,7 @@ $(function () {
         $result.removeClass("ok err").addClass("err").text("请求失败：" + xhr.status);
       },
       complete: function () {
+        clearInterval(timer);
         $btn.prop("disabled", false);
       },
     });

@@ -84,6 +84,9 @@ command_action_dict = {
     # 4.2 终极纯歌名兜底
     r"^播(?:放)?(?P<name>.+?)$": "play",
 }
+DEFAULT_MIRROR_DB_PATH = "cache/library_mirror.sqlite3"
+
+
 @dataclass
 class EmbyUser:
     """Emby用户配置"""
@@ -214,9 +217,7 @@ class Config:
     pr_timeout_seconds: float = float(os.getenv("XIAOMUSIC_PR_TIMEOUT_SECONDS", "15"))
     pr_event_limit: int = int(os.getenv("XIAOMUSIC_PR_EVENT_LIMIT", "500"))
     # 本地曲库镜像
-    mirror_db_path: str = os.getenv(
-        "XIAOMUSIC_MIRROR_DB_PATH", "cache/library_mirror.sqlite3"
-    )
+    mirror_db_path: str = os.getenv("XIAOMUSIC_MIRROR_DB_PATH", DEFAULT_MIRROR_DB_PATH)
     mirror_stale_days: int = int(os.getenv("XIAOMUSIC_MIRROR_STALE_DAYS", "7"))
 
     # 画像门控 / 对数封顶（对应 ProfileConfig）
@@ -286,6 +287,9 @@ class Config:
         self._exclude_dirs_set = set()
 
     def __post_init__(self) -> None:
+        # 旧配置或手动保存的空值一律回填默认路径，避免页面/接口再次出现空值。
+        if not self.mirror_db_path:
+            self.mirror_db_path = DEFAULT_MIRROR_DB_PATH
         if self.hostname:
             if not self.hostname.startswith(("http://", "https://")):
                 self.hostname = f"http://{self.hostname}"  # 默认 http
@@ -361,6 +365,8 @@ class Config:
             converted_value = self.convert_value(k, v, type_hints)
             if converted_value is not None:
                 setattr(self, k, converted_value)
+        if not self.mirror_db_path:
+            self.mirror_db_path = DEFAULT_MIRROR_DB_PATH
         self.init()
 
     def get_active_cmd_arr(self):

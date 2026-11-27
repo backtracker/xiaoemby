@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from xiaomusic.utils.library_mirror import LibraryMirror
-from xiaomusic.utils.mirror_sync import sync_mirror
+from xiaomusic.utils.mirror_sync import fetch_library, sync_mirror
 
 
 class FakeMirrorClient:
@@ -57,6 +57,16 @@ def config(tmp_path, **overrides):
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+def test_fetch_library_reports_paged_progress():
+    seen = []
+    client = FakeMirrorClient([raw(i) for i in range(1200)])
+    fetch_library(client, "u1", page_size=500, progress=seen.append)
+    assert [s["phase"] for s in seen] == ["fetch", "fetch", "fetch"]
+    assert [s["page"] for s in seen] == [1, 2, 3]
+    assert seen[-1]["pages"] == 3 and seen[-1]["total"] == 1200
+    assert seen[-1]["items"] == 1200
 
 
 def test_sync_is_side_effect_free_when_unconfigured(tmp_path):

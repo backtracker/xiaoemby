@@ -6,6 +6,7 @@ import shutil
 import tempfile
 from dataclasses import asdict
 from datetime import date
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
@@ -19,6 +20,18 @@ from xiaomusic.utils.mirror_sync import sync_mirror
 from xiaomusic.utils.system_utils import deepcopy_data_no_sensitive_info
 
 router = APIRouter()
+
+# 手动同步进度（内存态，仅用于页面展示；不含任何凭据或路径）。
+_MIRROR_PROGRESS: dict[str, Any] = {
+    "running": False,
+    "phase": "idle",
+    "kind": "",
+    "page": 0,
+    "pages": 0,
+    "items": 0,
+    "total": 0,
+    "reason": "",
+}
 
 
 def _mirror_token(cfg) -> str:
@@ -129,13 +142,29 @@ async def sync_mirror_now(request: Request):
         raise HTTPException(status_code=400, detail="Invalid kind")
 
     cfg = xiaomusic.getconfig()
+    _MIRROR_PROGRESS.update(
+        running=True, phase="start", kind=kind, page=0, pages=0,
+        items=0, total=0, reason=""
+    )
+
+    def report(update: dict[str, Any]) -> None:
+        _MIRROR_PROGRESS.update(update)
+
     try:
         result = await asyncio.to_thread(
-            sync_mirror, cfg, token=_mirror_token(cfg), kind=kind
+            sync_mirror, cfg, token=_mirror_token(cfg), kind=kind, progress=report
         )
     except Exception as err:
         log.warning(f"手动镜像同步异常: {type(err).__name__}")
         result = {"ok": False, "skipped": False, "reason": type(err).__name__, "alerts": []}
+    finally:
+        _MIRROR_PROGRESS["running"] = False
+        if result.get("ok"):
+            _MIRROR_PROGRESS["phase"] = "done"
+        elif result.get("skipped"):
+            _MIRROR_PROGRESS["phase"] = "idle"
+        else:
+            _MIRROR_PROGRESS["phase"] = "failed"
 
     return {
         "ok": bool(result.get("ok")),
@@ -146,6 +175,12 @@ async def sync_mirror_now(request: Request):
         "tracks": int(result.get("items") or 0),
         "alerts": list(result.get("alerts") or []),
     }
+
+
+@router.get("/xiaoemby/system/mirror_sync_progress")
+async def mirror_sync_progress():
+    """查询手动同步进度（只读、无凭据）。"""
+    return dict(_MIRROR_PROGRESS)
 
 
 @router.get("/xiaoemby/system/mirror_status")
