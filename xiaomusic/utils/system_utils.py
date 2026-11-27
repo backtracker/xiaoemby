@@ -3,13 +3,11 @@
 
 import asyncio
 import copy
-import hashlib
 import logging
 import os
 import platform
 import random
 import string
-import urllib.parse
 from http.cookies import SimpleCookie
 from urllib.parse import urlparse
 
@@ -97,6 +95,7 @@ def deepcopy_data_no_sensitive_info(data, fields_to_anonymize: list = None):
             "account",
             "password",
             "emby_password",
+            "emby_api_key",
             "llm_api_key",
         ]
 

@@ -300,6 +300,19 @@
                     <div class="hint">推理模型思考会占用预算；太小会导致生成失败并回退本地混歌</div>
                 </div>
 
+                <h3 class="group-title">本地曲库镜像</h3>
+                <div class="field">
+                    <label for="mirror_db_path">本地曲库镜像路径</label>
+                    <input id="mirror_db_path" type="text" placeholder="cache/library_mirror.sqlite3" />
+                    <div class="hint">设置路径后启用；首次同步会全量拉取曲库，之后每日增量、每周对账。修改路径后请先「保存配置」再同步。</div>
+                </div>
+                <div class="ops" style="margin-top:10px">
+                    <button type="button" class="btn pri" id="mirror_sync_full" data-mirror-sync="true" data-kind="full">立即同步本地曲库（首次全量）</button>
+                    <button type="button" class="btn sm" id="mirror_sync_daily" data-mirror-sync="true" data-kind="daily">每日增量</button>
+                    <button type="button" class="btn sm" id="mirror_sync_weekly" data-mirror-sync="true" data-kind="weekly">每周对账</button>
+                </div>
+                <div class="hint" id="mirror_sync_result" style="margin-top:8px"></div>
+
                 <h3 class="group-title">歌单规模与排序</h3>
                 <div class="grid2">
                     <div class="field">

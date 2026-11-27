@@ -610,6 +610,39 @@ $(function () {
     });
   });
 
+  // ============ 本地曲库镜像同步 ============
+  $("[data-mirror-sync]").on("click", function () {
+    const $btn = $(this);
+    const $result = $("#mirror_sync_result");
+    const kind = $btn.data("kind") || "full";
+    $result.removeClass("ok err").text("正在同步本地曲库…");
+    $btn.prop("disabled", true);
+    $.ajax({
+      type: "POST",
+      url: "/xiaoemby/system/sync_mirror",
+      contentType: "application/json",
+      data: JSON.stringify({ kind: kind }),
+      success: function (resp) {
+        let detail;
+        if (resp && resp.skipped) {
+          detail = "未启用：" + (resp.reason || "未配置镜像路径");
+        } else if (resp && resp.ok) {
+          detail = "完成（" + (resp.kind || kind) + "）：v" + (resp.version || 0) +
+            "，共 " + (resp.tracks || 0) + " 首";
+        } else {
+          detail = "失败：" + ((resp && resp.reason) || "未知错误");
+        }
+        $result.removeClass("ok err").addClass(resp && resp.ok ? "ok" : "err").text(detail);
+      },
+      error: function (xhr) {
+        $result.removeClass("ok err").addClass("err").text("请求失败：" + xhr.status);
+      },
+      complete: function () {
+        $btn.prop("disabled", false);
+      },
+    });
+  });
+
   // ============ 定时开关语音口令 ============
   const CRON_REPEAT = [
     ["every", "每天", "*"],

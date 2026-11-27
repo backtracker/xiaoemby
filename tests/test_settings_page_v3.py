@@ -152,7 +152,6 @@ def test_no_credentials_or_internal_knobs_on_page():
         "pr_api_key",
         "pr_timeout_seconds",
         "pr_event_limit",
-        "mirror_db_path",
         "mirror_stale_days",
         "min_window_samples",
         "min_taste_samples",
@@ -177,3 +176,39 @@ def test_no_credentials_or_internal_knobs_on_page():
 def test_js_roundtrip_mechanism_intact():
     assert '$("#" + key)' in JS
     assert 'setting.find("input, select, textarea")' in JS
+
+
+def test_mirror_db_path_is_exposed_with_sync_entry_points():
+    marker = '<h3 class="group-title">本地曲库镜像</h3>'
+    assert marker in SECTION, "本地曲库镜像应在 AI 今日推荐分区可见"
+    block = SECTION[SECTION.index(marker) :]
+
+    field = re.search(
+        r'<div class="field">\s*<label for="mirror_db_path">(.*?)</label>(.*?)</div>',
+        block,
+        re.S,
+    )
+    assert field is not None, "mirror_db_path 缺少可见字段"
+    label, body = field.group(1), field.group(2)
+    assert CJK.search(re.sub(r"<[^>]+>", "", label))
+    control = re.search(r"<input[^>]*>", body)
+    assert control is not None
+    assert 'id="mirror_db_path"' in control.group(0)
+    assert 'placeholder="cache/library_mirror.sqlite3"' in control.group(0)
+    assert "value=" not in control.group(0), "路径输入框默认应为空"
+    assert "设置路径后启用" in body and "首次同步会全量拉取曲库" in body
+
+    for button_id, text in (
+        ("mirror_sync_full", "立即同步本地曲库（首次全量）"),
+        ("mirror_sync_daily", "每日增量"),
+        ("mirror_sync_weekly", "每周对账"),
+    ):
+        button = re.search(rf'<button[^>]*id="{button_id}"[^>]*>(.*?)</button>', block, re.S)
+        assert button is not None, f"缺少 {button_id} 按钮"
+        assert text in re.sub(r"<[^>]+>", "", button.group(1))
+        assert 'data-mirror-sync="' in button.group(0)
+
+    assert 'data-kind="full"' in block
+    assert 'id="mirror_sync_result"' in block
+    assert "/xiaoemby/system/sync_mirror" in JS
+    assert "[data-mirror-sync]" in JS

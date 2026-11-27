@@ -122,6 +122,8 @@ class Config:
     emby_user_id: str = os.getenv("XIAOMUSIC_EMBY_USER_ID", "")  # 保留兼容旧配置
     emby_username: str = os.getenv("XIAOMUSIC_EMBY_USERNAME", "")
     emby_password: str = os.getenv("XIAOMUSIC_EMBY_PASSWORD", "")
+    # Emby 管理员 token（密钥）：仅服务端使用，不进设置页和接口回显
+    emby_api_key: str = os.getenv("XIAOMUSIC_EMBY_API_KEY", "")
     emby_users: dict[str, EmbyUser] = field(default_factory=dict)  # 多用户配置
 
     active_cmd: str = os.getenv(

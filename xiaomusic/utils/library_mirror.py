@@ -516,6 +516,13 @@ class LibraryMirror:
             sql += " WHERE tombstone = 0"
         return [self._row_to_dict(row) for row in self._conn.execute(sql)]
 
+    def track_count(self, include_tombstones: bool = False) -> int:
+        """轻量曲目计数；不加载曲目内容，供状态接口只读展示。"""
+        sql = "SELECT COUNT(*) AS n FROM tracks"
+        if not include_tombstones:
+            sql += " WHERE tombstone = 0"
+        return int(self._conn.execute(sql).fetchone()["n"])
+
     def tombstones(self) -> list[dict[str, Any]]:
         """已删除曲目（墓碑），不物理删除，也不进候选池。"""
         return [
