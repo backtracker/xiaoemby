@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>原型 07 · v3 打分与三段节目单形状</title>
+<style>
+  :root { --accent:#2563eb; --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --bg:#f9fafb; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px 32px 60px; font:15px/1.6 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; color:var(--ink); background:var(--bg); }
+  h1 { font-size:24px; margin:0 0 6px; }
+  h2 { font-size:17px; margin:26px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+  p.lead { color:var(--muted); margin:0 0 18px; max-width:900px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin:10px 0; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .kv { display:grid; grid-template-columns:130px 1fr; gap:4px 10px; align-items:start; }
+  .kv b { color:var(--muted); font-weight:500; }
+  .tag { display:inline-block; padding:1px 8px; border:1px solid var(--line); border-radius:999px; font-size:12px; margin:1px 3px 1px 0; color:var(--muted); }
+  .tag.on { background:#eff6ff; border-color:#bfdbfe; color:var(--accent); }
+  button { border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 12px; margin:3px 5px 3px 0; cursor:pointer; font:inherit; color:var(--ink); }
+  button:hover { border-color:var(--accent); color:var(--accent); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.next { border-color:var(--accent); color:var(--accent); }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th,td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; }
+  .seg { margin:12px 0; border-left:4px solid var(--accent); padding-left:12px; }
+  .seg h3 { margin:0 0 6px; font-size:15px; }
+  .seg .meta { color:var(--muted); font-size:13px; margin-bottom:6px; }
+  .track { display:grid; grid-template-columns:26px 190px 120px 1fr 60px; gap:8px; padding:3px 0; border-bottom:1px dotted var(--line); font-size:13px; }
+  .track .src { color:var(--muted); }
+  .track .src.explore { color:var(--accent); }
+  .track .score { text-align:right; color:var(--muted); }
+  code { background:#f3f4f6; padding:1px 5px; border-radius:4px; font-size:12px; }
+  .formula { font-family:ui-monospace,Consolas,monospace; white-space:pre-wrap; font-size:12.5px; background:#f8fafc; border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+  .tabs button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .notes { color:var(--muted); font-size:12.5px; }
+  .flash { background:#fffbeb; border:1px solid #fde68a; padding:8px 12px; border-radius:8px; margin:10px 0; }
+</style>
+</head>
+<body>
+
+<h1>原型 07 · v3 打分与三段节目单形状</h1>
+<p class="lead">
+<strong>这个原型回答的问题</strong>：按已定的 04（权重映射）、05（三档模式）、06（catalog 字段）决策，把 PR 行为信号接进 <code>base_score</code> 和「熟悉开场 → 探索中段 → 平缓收尾」三段节目单后，<strong>20 首歌单的形状对不对</strong>？<br>
+点按钮切档位、改行为事件、生成歌单，看分数拆解与歌单怎么变。曲目名只是真实样本占位，不代表真实推荐结果。这是<strong>一次性原型，不要合入生产</strong>。
+</p>
+
+<div class="flash" id="flash">当前变化：初始状态（PR 模式，7 天数据）。</div>
+
+<h2>当前状态</h2>
+<div class="grid">
+  <div class="card">
+    <div class="kv">
+      <b>档位</b><span id="s-mode"></span>
+      <b>样本 / 置信度</b><span id="s-conf"></span>
+      <b>换一批次数</b><span id="s-batch"></span>
+      <b>行为事件</b><span id="s-events"></span>
+      <b>收藏</b><span id="s-fav"></span>
+    </div>
+  </div>
+  <div class="card">
+    <b>catalog 字段示意（哪几个进 LLM）</b>
+    <div style="margin-top:6px"><span class="tag on">进 LLM：play_events</span><span class="tag on">daypart_note</span><span class="tag on">pending_telemetry[search,dislike]</span><span class="tag on">taste_vector(一维 top6)</span></div>
+    <div style="margin-top:8px"><span class="tag">只进本地打分：raw PR 行</span><span class="tag">完成率 completion</span><span class="tag">窗口次数</span><span class="tag">三张 penalty 表</span><span class="tag">ClientName/DeviceName</span><span class="tag">推荐曝光次数</span></div>
+    <p class="notes" style="margin-bottom:0">v2 模式 catalog 不含任何 PR 字段；混合模式含 play_events / daypart_note 但本地只做 ±20% 打分修正，不改候选池 / 分段 / 配额。</p>
+  </div>
+</div>
+
+<div class="card">
+  <b>打分公式草稿（当前焦点曲目：<span id="focus-name"></span>）</b>
+  <div class="formula" id="formula"></div>
+  <p class="notes" style="margin-bottom:0">v2 红线保留：<code>base_score</code> 结构不变，只替换 taste / familiar 两项输入；<code>repeat/fresh/ucb/boost</code> 全保留；PR 负反馈走独立 7 天半衰期 penalty，与 v2 三张 penalty 表分开累加。</p>
+</div>
+
+<div class="card">
+  <b>三段节目单规则草稿</b>
+  <table>
+    <tr><th>段</th><th>share / 20 首</th><th>信号约束</th><th>配额思路（未拍板）</th></tr>
+    <tr><td>熟悉开场</td><td>0.3 / 6</td><td>familiar 高、novelty 低；收藏锚点 + 周期回访；重复惩罚按到期回访减半</td><td>FAMILIAR 为主</td></tr>
+    <tr><td>探索中段</td><td>0.4 / 8</td><td>novelty 高；7 天短期接受度 / 疲劳抑制；daypart_note 只作描述，不建场景</td><td>ADJACENT + NOVEL</td></tr>
+    <tr><td>平缓收尾</td><td>0.3 / 6</td><td>familiar 与 adjacent 混合，mellow/comfort 语义</td><td>混合，不强凑配额</td></tr>
+  </table>
+  <p class="notes" style="margin-bottom:0">起点配额 50/35/15、每次 ±5pp 来自讨论稿，<strong>本图尚未拍板</strong>；本原型只是把它摆出来供你反应。</p>
+</div>
+
+<h2>自由操作（随便点，顺序不限）</h2>
+<div id="free"></div>
+
+<h2>今日歌单（20 首）</h2>
+<div id="playlist"></div>
+
+<h2>引导演示（每个标签重置到已知状态）</h2>
+<div class="tabs" id="tabs"></div>
+<div class="card" id="scenario"></div>
+
+<script>
+/* ---- 纯逻辑模块：不碰 DOM，可整块搬走 ---- */
+const Logic = (() => {
+  const T = (id, name, artist, genre, o = {}) => Object.assign(
+    { id, name, artist, genre, playCount: 0, windowCount: 0, completion: 0.9,
+      favorite: false, lastPlayedDays: 999, createdRecently: false,
+      unheardFamousArtist: false, similar: false, cold: false }, o);
+
+  const TRACKS = [
+    T('jiangan','江南','林俊杰','流行',{playCount:18,windowCount:3,completion:0.95,lastPlayedDays:12,favorite:true}),
+    T('zhangyusheng','我的未来不是梦','张雨生','流行',{playCount:12,windowCount:1,completion:0.92,lastPlayedDays:40}),
+    T('shuimu','一生有你','水木年华','民谣',{playCount:6,windowCount:2,completion:0.88,lastPlayedDays:9}),
+    T('ruyuan','如愿','王菲','流行',{playCount:9,windowCount:2,completion:0.97,favorite:true}),
+    T('qing Tian','晴天','周杰伦','流行',{playCount:20,windowCount:1,completion:0.9,lastPlayedDays:60}),
+    T('pingfan','平凡之路','朴树','摇滚',{unheardFamousArtist:true}),
+    T('fujia','富士山下','陈奕迅','粤语',{similar:true}),
+    T('juejiang','倔强','五月天','摇滚',{cold:true}),
+    T('yequ','夜曲','周杰伦','流行',{unheardFamousArtist:true}),
+    T('fukua','浮夸','陈奕迅','粤语',{similar:true}),
+    T('lianhua','蓝莲花','许巍','摇滚',{cold:true}),
+    T('houlai','后来','刘若英','流行',{windowCount:1,completion:0.6,lastPlayedDays:20}),
+    T('tinghai','听海','张惠妹','流行',{windowCount:1,completion:0.12,lastPlayedDays:20}),
+    T('shanqiu','山丘','李宗盛','民谣',{playCount:8,windowCount:1,completion:0.91,lastPlayedDays:33}),
+    T('guanghui','光辉岁月','Beyond','摇滚',{playCount:15,windowCount:1,completion:0.93,lastPlayedDays:70}),
+    T('xiaoxingyun','小幸运','田馥甄','流行',{similar:true}),
+    T('chengdu','成都','赵雷','民谣',{unheardFamousArtist:true}),
+    T('xiaochou','消愁','毛不易','流行',{cold:true}),
+    T('yan Yuan','演员','薛之谦','流行',{windowCount:1,completion:0.52,lastPlayedDays:15}),
+    T('haikuo','海阔天空','Beyond','摇滚',{playCount:11,windowCount:2,completion:0.94,favorite:true}),
+    T('daoxiang','稻香','周杰伦','流行',{windowCount:1,completion:0.86,lastPlayedDays:25,createdRecently:true}),
+    T('chuntian','春天里','汪峰','摇滚',{cold:true}),
+    T('congcong','匆匆那年','王菲','流行',{similar:true}),
+    T('pengyou','朋友','周华健','流行',{playCount:10,windowCount:1,completion:0.9,lastPlayedDays:88}),
+    T('973820','曲目 973820（占位）','未知歌手','流行',{playCount:7,windowCount:1,completion:0.99,lastPlayedDays:1}),
+  ];
+
+  const confidence = samples => Math.min(1, samples / 15);
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+
+  function score(t, ctx) {
+    const conf = confidence(ctx.samples);
+    const historic = Math.min(Math.log2(1 + t.playCount), 3) / 3;          // 累计次数底分（对数封顶）
+    const win = Math.min(t.windowCount, 3) / 3 * t.completion;              // 窗口次数门控
+    const prTaste = historic * 0.5 + win * conf;                            // PR 口味贡献（含 confidence 折扣）
+    const v2Taste = historic;                                               // v2 只有累计次数
+    const familiar = t.favorite ? 1.0
+      : ctx.mode === 'v2' ? (t.lastPlayedDays <= 7 ? 0.6 : 0)
+      : (t.lastPlayedDays <= 30 && t.windowCount >= 2 ? 0.6 : 0);           // 04：30 天内 ≥2 次
+    const novelty = (1 - familiar + (t.createdRecently ? 0.3 : 0)) * 0.8;
+    const ev = ctx.events[t.id] || {};
+    let trackPen = 0, artistPen = 0, genrePen = 0;
+    if (ev.justPlayed) trackPen = 0.7;                                      // 刚听完：v2 track penalty
+    if (ev.short) trackPen = Math.max(trackPen, 0.5);                       // 极短：独立 PR penalty（7 天半衰期）
+    for (const other of TRACKS) {
+      if (other.artist === t.artist && (ctx.events[other.id] || {}).short) artistPen = 0.5;
+      if (other.genre === t.genre && (ctx.events[other.id] || {}).short) genrePen = 0.3;
+    }
+    const repeat = (1 - trackPen) * (1 - artistPen) * (1 - genrePen);
+    const fresh = t.createdRecently ? 1.2 : 1.0;
+    const exposure = ctx.exposure[t.genre] || 0;
+    const ucb = 0.3 * Math.sqrt(Math.log(1 + 20) / (1 + exposure));
+    const boost = 0;
+    const prMultiplier = clamp(1 + 0.2 * (prTaste - 0.5) * 2, 0.8, 1.2);    // 混合模式 ±20%
+
+    let total;
+    if (ctx.mode === 'v2') {
+      total = (1 + v2Taste * 1.5 + ucb) * repeat * fresh + familiar * 0.6 + novelty;
+    } else if (ctx.mode === 'hybrid') {
+      const base = (1 + v2Taste * 1.5 + ucb) * repeat * fresh + familiar * 0.6 + novelty;
+      total = base * prMultiplier;
+    } else {
+      total = (1 + prTaste * 1.5 + ucb + boost) * repeat * fresh + familiar * 0.6 + novelty;
+    }
+    total -= ctx.batch * 0.04 * (t.id.length % 3);                          // 换一批：轻微重排，不换结构
+    return { total: Math.round(total * 100) / 100, parts: {
+      historic, win, conf, prTaste, familiar, novelty, repeat, fresh, ucb, prMultiplier
+    }};
+  }
+
+  function sourceOf(t, ctx) {
+    const ev = ctx.events[t.id] || {};
+    if (ev.short) return ['极短播放·已降权', ''];
+    if (ev.justPlayed) return ['刚听完·已降权', ''];
+    if (t.favorite) return ['收藏锚点 / 完整播放', ''];
+    if (t.windowCount >= 2) return ['重复收听（≥2 次）', ''];
+    if (t.unheardFamousArtist) return ['探索·熟悉歌手未听', 'explore'];
+    if (t.similar) return ['探索·相似曲目', 'explore'];
+    if (t.cold) return ['冷门簇曝光', 'explore'];
+    return ['完整播放', ''];
+  }
+
+  function buildPlaylist(ctx) {
+    const scored = TRACKS.map(t => ({ t, s: score(t, ctx) }));
+    const byFam = scored.slice().sort((a, b) => b.s.parts.familiar - a.s.parts.familiar || b.s.total - a.s.total);
+    const first = byFam.slice(0, 6);
+    const used = new Set(first.map(x => x.t.id));
+    const byNov = scored.filter(x => !used.has(x.t.id))
+      .sort((a, b) => b.s.parts.novelty - a.s.parts.novelty || b.s.total - a.s.total);
+    const mid = byNov.slice(0, 8);
+    mid.forEach(x => used.add(x.t.id));
+    const last = scored.filter(x => !used.has(x.t.id)).sort((a, b) => b.s.total - a.s.total).slice(0, 6);
+    const seg = (name, share, items, rule) => ({
+      name, share, rule, items: items.map(x => ({ t: x.t, score: x.s.total, src: sourceOf(x.t, ctx) }))
+    });
+    return [
+      seg('熟悉开场', '0.3 / 6 首', first, 'familiar 高、novelty 低'),
+      seg('探索中段', '0.4 / 8 首', mid, 'novelty 高，daypart 只作描述'),
+      seg('平缓收尾', '0.3 / 6 首', last, 'familiar + adjacent 混合'),
+    ];
+  }
+
+  return { TRACKS, confidence, score, buildPlaylist };
+})();
+
+/* ---- 页面（薄壳）---- */
+const FREE = [
+  ['pr', 'PR 模式', '切到 PR 模式（全量公式）'],
+  ['hybrid', '混合模式', '切到混合模式（±20% 修正）'],
+  ['v2', 'v2 模式', '切到 v2 模式（无 PR 字段）'],
+  ['samples7', '样本恢复 7 天', '把样本量恢复到 25 条 / confidence≈1'],
+  ['samples3', '样本降到 3 天', '把样本量降到 3 条 / confidence=0.2'],
+  ['generate', '生成今日歌单', '按当前档位与事件重建 20 首歌单'],
+  ['batch', '换一批', '沿用当天档位，轻微重排候选顺序'],
+  ['short', '江南：标记极短播放', '给江南打独立 PR penalty（7 天半衰期）'],
+  ['played', '973820：标记刚听完', '给对应曲目打 v2 track penalty'],
+  ['fav', '切换收藏江南', '收藏 → familiar=1.0 且豁免极短降权'],
+];
+
+let state, scenario = null, stepIdx = 0;
+
+function reset() {
+  state = { mode: 'pr', samples: 25, batch: 0, events: {},
+    favorites: new Set(['jiangan']), exposure: { '流行': 3, '民谣': 1, '摇滚': 2 },
+    playlist: null, last: '初始状态：PR 模式、25 条样本。' };
+  // 收藏同步进逻辑模块的曲目属性（原型内直接改，生产里应由 Emby IsFavorite 注入）
+  Logic.TRACKS.forEach(t => { t.favorite = state.favorites.has(t.id); });
+}
+reset();
+
+function dispatch(action, note) {
+  switch (action) {
+    case 'pr': case 'hybrid': case 'v2': state.mode = action; break;
+    case 'samples7': state.samples = 25; break;
+    case 'samples3': state.samples = 3; break;
+    case 'generate': state.playlist = Logic.buildPlaylist(state); break;
+    case 'batch': state.batch += 1; state.playlist = Logic.buildPlaylist(state); break;
+    case 'short': state.events.jiangan = Object.assign({}, state.events.jiangan, { short: true }); break;
+    case 'played': state.events['973820'] = Object.assign({}, state.events['973820'], { justPlayed: true }); break;
+    case 'fav':
+      if (state.favorites.has('jiangan')) { state.favorites.delete('jiangan'); delete state.events.jiangan; }
+      else state.favorites.add('jiangan');
+      Logic.TRACKS.forEach(t => { t.favorite = state.favorites.has(t.id); });
+      break;
+  }
+  state.last = note || ('执行：' + action);
+  if (action !== 'generate' && action !== 'batch') state.playlist = null;
+  render();
+}
+
+const label = { pr: 'PR 模式', hybrid: '混合模式', v2: 'v2 模式' };
+
+function render() {
+  document.getElementById('flash').textContent = '当前变化：' + state.last;
+  document.getElementById('s-mode').textContent = label[state.mode];
+  document.getElementById('s-conf').textContent = `${state.samples} 条 → confidence ${Logic.confidence(state.samples).toFixed(2)}`;
+  document.getElementById('s-batch').textContent = String(state.batch);
+  const evs = Object.keys(state.events).filter(k => Object.values(state.events[k]).some(Boolean));
+  document.getElementById('s-events').textContent = evs.length ? evs.join('、') : '无';
+  document.getElementById('s-fav').textContent = state.favorites.size ? [...state.favorites].join('、') : '无';
+
+  const focus = (state.playlist && state.playlist[0].items[0]) || { t: Logic.TRACKS[0], score: null };
+  document.getElementById('focus-name').textContent = focus.t.name;
+  const p = Logic.score(focus.t, state).parts;
+  document.getElementById('formula').textContent =
+`base_score =
+  (1 + taste * 1.5 + boost + ucb) * repeat * fresh
+  + familiar * w_familiarity
+  + novelty
+
+taste       = ${state.mode === 'v2' ? 'v2 累计次数底分' : 'PR：累计底分×0.5 + 窗口次数×完成率×confidence'}
+  historic  = min(log2(1+PlayCount),3)/3 = ${p.historic.toFixed(2)}
+  win       = min(窗口次数,3)/3 × 完成率 = ${p.win.toFixed(2)}
+  conf      = ${p.conf.toFixed(2)}
+  prTaste   = ${p.prTaste.toFixed(2)}
+familiar    = ${p.familiar.toFixed(2)}   ${focus.t.favorite ? '（收藏，豁免极短降权）' : ''}
+novelty     = ${p.novelty.toFixed(2)}
+repeat      = ${p.repeat.toFixed(2)}   ${Object.keys(state.events).length ? '（含独立 PR penalty）' : ''}
+fresh       = ${p.fresh.toFixed(2)}
+ucb         = ${p.ucb.toFixed(2)}
+prMultiplier= ${p.prMultiplier.toFixed(2)} ${state.mode === 'hybrid' ? '（混合模式只用它修正打分）' : '（本档位不生效）'}
+总分         = ${focus.score === null ? '（先点「生成今日歌单」）' : focus.score}`;
+
+  document.getElementById('free').innerHTML = FREE.map(f =>
+    `<button data-a="${f[0]}" title="${f[2]}">${f[1]}</button>`).join('');
+  document.querySelectorAll('#free button').forEach(b =>
+    b.onclick = () => dispatch(b.dataset.a));
+
+  const pl = document.getElementById('playlist');
+  if (!state.playlist) { pl.innerHTML = '<p class="notes">（点「生成今日歌单」后显示 20 首示例。）</p>'; }
+  else {
+    pl.innerHTML = state.playlist.map(s =>
+      `<div class="seg"><h3>${s.name} · ${s.share}</h3><div class="meta">${s.rule}</div>` +
+      s.items.map((x, i) => `<div class="track"><span>${i + 1}</span><span>${x.t.name}</span>` +
+        `<span>${x.t.artist}</span><span class="src ${x.src[1]}">${x.src[0]}</span>` +
+        `<span class="score">${x.score}</span></div>`).join('') + '</div>').join('');
+  }
+
+  const SCENARIOS = [
+    { name: '充足数据 happy path', desc: '7 天以上、样本充足 → PR 模式全量公式。看三段是否「熟悉开场 → 探索中段 → 平缓收尾」，探索来源是否被标出来。',
+      steps: [['pr','切 PR 模式'],['samples7','样本恢复 7 天'],['generate','生成今日歌单']] },
+    { name: '只有 3 天', desc: '样本降到 3 条 → confidence=0.2，切混合模式。看 PR 是否只做 ±20% 打分修正，候选池 / 三段结构是否完全不变。',
+      steps: [['samples3','样本降到 3 天'],['hybrid','切混合模式'],['generate','生成今日歌单']] },
+    { name: '刚听完 + 极短播放', desc: '把「江南」标极短、把 973820 标刚听完。看它们是否被降权、是否仍混进歌单、收藏是否豁免。',
+      steps: [['pr','切 PR 模式'],['samples7','样本恢复 7 天'],['played','标记刚听完'],['short','标记极短播放'],['generate','生成今日歌单']] },
+    { name: '时段不是场景', desc: 'daypart_note 只进 LLM 描述。看三段结构、7 值 intent、配额草稿是否都没因时段而变形。',
+      steps: [['pr','切 PR 模式'],['samples7','样本恢复 7 天'],['generate','生成今日歌单']] },
+  ];
+  document.getElementById('tabs').innerHTML = SCENARIOS.map((s, i) =>
+    `<button data-i="${i}" class="${scenario === i ? 'active' : ''}">${s.name}</button>`).join('');
+  document.querySelectorAll('#tabs button').forEach(b =>
+    b.onclick = () => { scenario = Number(b.dataset.i); stepIdx = 0; reset(); dispatch('generate', '演示重置：' + SCENARIOS[scenario].name + '，先生成一版基线。'); });
+
+  const sc = document.getElementById('scenario');
+  if (scenario === null) { sc.innerHTML = '<p class="notes">选一个标签开始演示：会重置状态，再逐步点击按钮。</p>'; }
+  else {
+    const s = SCENARIOS[scenario];
+    sc.innerHTML = `<b>${s.name}</b><p class="notes">${s.desc}</p>` +
+      `<p class="notes">步骤 ${Math.min(stepIdx + 1, s.steps.length)} / ${s.steps.length}：</p>` +
+      (stepIdx < s.steps.length
+        ? `<button class="next" id="stepbtn">下一步：${s.steps[stepIdx][1]}</button>`
+        : '<p class="notes">演示完成。现在用自由操作继续戳。</p>');
+    const b = document.getElementById('stepbtn');
+    if (b) b.onclick = () => {
+      const [a, n] = s.steps[stepIdx]; stepIdx += 1; dispatch(a, '演示：' + n);
+    };
+  }
+}
+render();
+</script>
+</body>
+</html>
