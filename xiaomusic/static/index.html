@@ -95,23 +95,15 @@
       padding: 28px 40px;
       max-width: 520px;
     }
-    h1 {
-      margin: 0 0 14px;
-      font-size: 20px;
+    .desc p { margin: 5px 0; font-size: 13px; color: var(--sub); }
+    p.call {
+      margin-bottom: 7px;
+      color: var(--ink);
+      font-size: 16px;
       font-weight: 650;
-      letter-spacing: -.3px;
+      letter-spacing: -.2px;
     }
-    h1::after {
-      content: "";
-      display: block;
-      width: 36px;
-      height: 2px;
-      background: var(--accent);
-      margin: 12px auto 0;
-      border-radius: 2px;
-    }
-    .desc p { margin: 6px 0; font-size: 13px; color: var(--sub); }
-    p.call { color: var(--ink); font-weight: 600; }
+    p.answer { color: var(--sub); }
     .cta {
       display: flex;
       flex-direction: column;
@@ -169,8 +161,8 @@
     footer a:hover { color: var(--accent); }
     @media screen and (max-width: 510px) {
       .logo img { width: 92px; }
-      .desc { padding: 20px; }
-      h1 { font-size: 17px; }
+      .desc { padding: 20px 26px; }
+      p.call { font-size: 15px; }
     }
   </style>
 </head>
@@ -181,7 +173,6 @@
       <img src="/static/logowhite_1881.png" alt="XiaoEmby Logo" />
     </div>
     <div class="desc">
-      <h1>谁家灯火夜通明</h1>
       <p class="call">小爱同学？</p>
       <p class="answer">哎，我在</p>
     </div>
