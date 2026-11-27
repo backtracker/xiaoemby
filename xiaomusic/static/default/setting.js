@@ -611,6 +611,23 @@ $(function () {
   });
 
   // ============ 本地曲库镜像同步 ============
+  function refreshMirrorStatus() {
+    $.getJSON("/xiaoemby/system/mirror_status", function (s) {
+      const $status = $("#mirror_status");
+      if (s && s.tracks) {
+        $status.text(
+          "已同步 " + Number(s.tracks).toLocaleString() + " 首 · v" + (s.version || 0) +
+          " · 最近同步 " + (s.last_sync || "-")
+        );
+      } else {
+        $status.text("已同步 0 首（尚未同步镜像）");
+      }
+    }).fail(function () {
+      $("#mirror_status").text("镜像状态读取失败");
+    });
+  }
+  refreshMirrorStatus();
+
   $("[data-mirror-sync]").on("click", function () {
     const $btn = $(this);
     const $result = $("#mirror_sync_result");
@@ -647,8 +664,8 @@ $(function () {
         if (resp && resp.skipped) {
           detail = "未启用：" + (resp.reason || "未配置镜像路径");
         } else if (resp && resp.ok) {
-          detail = "完成（" + (resp.kind || kind) + "）：v" + (resp.version || 0) +
-            "，共 " + (resp.tracks || 0) + " 首";
+          detail = "完成（" + (resp.kind || kind) + "）：已同步 " +
+            Number(resp.tracks || 0).toLocaleString() + " 首 · v" + (resp.version || 0);
         } else {
           detail = "失败：" + ((resp && resp.reason) || "未知错误");
         }
@@ -660,6 +677,7 @@ $(function () {
       complete: function () {
         clearInterval(timer);
         $btn.prop("disabled", false);
+        refreshMirrorStatus();
       },
     });
   });

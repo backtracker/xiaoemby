@@ -137,7 +137,10 @@ class XiaoMusic:
 
 
     def init_config(self):
-        # 确保必要的目录存在（临时目录由 config.temp_dir 按需创建）
+        # 确保必要的目录存在
+        if not os.path.exists(self.config.temp_path):
+            os.makedirs(self.config.temp_path)
+
         if not os.path.exists(self.config.conf_path):
             os.makedirs(self.config.conf_path)
 

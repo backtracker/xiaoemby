@@ -218,8 +218,9 @@ async def mirror_status():
     """只读镜像版本/曲目数/最近同步日；未配置或文件不存在时不创建文件。"""
     cfg = xiaomusic.getconfig()
     db_path = str(getattr(cfg, "mirror_db_path", "") or "")
-    empty = {"configured": bool(db_path), "version": 0, "tracks": 0, "last_sync": None}
-    if not db_path or not os.path.exists(db_path):
+    exists = bool(db_path) and os.path.exists(db_path)
+    empty = {"configured": exists, "version": 0, "tracks": 0, "last_sync": None}
+    if not exists:
         return empty
 
     def read_status():

@@ -84,8 +84,8 @@ command_action_dict = {
     # 4.2 终极纯歌名兜底
     r"^播(?:放)?(?P<name>.+?)$": "play",
 }
-# conf 目录在 Docker 中是持久化卷；cache 目录随容器重建丢失，不能作为镜像默认位置。
-DEFAULT_MIRROR_DB_PATH = "conf/library_mirror.sqlite3"
+# 曲库镜像固定在缓存目录下，文件名不再单独配置。
+MIRROR_DB_FILENAME = "library_mirror.sqlite3"
 
 
 @dataclass
@@ -116,6 +116,7 @@ class Config:
     verbose: bool = os.getenv("XIAOMUSIC_VERBOSE", "").lower() == "true"
     conf_path: str = os.getenv("XIAOMUSIC_CONF_PATH", "conf")
     cache_dir: str = os.getenv("XIAOMUSIC_CACHE_DIR", "cache")
+    temp_path: str = os.getenv("XIAOMUSIC_TEMP_PATH", "temp")
     hostname: str = os.getenv("XIAOMUSIC_HOSTNAME", "")
     port: int = int(os.getenv("XIAOMUSIC_PORT", "8090"))  # 监听端口
     public_port: int = int(os.getenv("XIAOMUSIC_PUBLIC_PORT", 58090))  # 歌曲访问端口
@@ -177,12 +178,12 @@ class Config:
 
     # edge-tts 语音角色
     edge_tts_voice: str = os.getenv("XIAOMUSIC_EDGE_TTS_VOICE", "zh-CN-XiaoyiNeural")
+    # 时区配置，用于定时任务等时间相关功能
+    timezone: str = os.getenv("XIAOMUSIC_TIMEZONE", "Asia/Shanghai")
     # 是否启用定时清理临时文件
     enable_auto_clean_temp: bool = (
         os.getenv("XIAOMUSIC_ENABLE_AUTO_CLEAN_TEMP", "true").lower() == "true"
     )
-    # 时区配置，用于定时任务等时间相关功能
-    timezone: str = os.getenv("XIAOMUSIC_TIMEZONE", "Asia/Shanghai")
 
     # ===== 今日推荐（LLM 编排 + 本地选曲）=====
     enable_daily_recommend: bool = (
@@ -217,7 +218,6 @@ class Config:
     pr_timeout_seconds: float = float(os.getenv("XIAOMUSIC_PR_TIMEOUT_SECONDS", "15"))
     pr_event_limit: int = int(os.getenv("XIAOMUSIC_PR_EVENT_LIMIT", "500"))
     # 本地曲库镜像
-    mirror_db_path: str = os.getenv("XIAOMUSIC_MIRROR_DB_PATH", DEFAULT_MIRROR_DB_PATH)
     mirror_stale_days: int = int(os.getenv("XIAOMUSIC_MIRROR_STALE_DAYS", "7"))
 
     # 画像门控 / 对数封顶（对应 ProfileConfig）
@@ -287,9 +287,6 @@ class Config:
         self._exclude_dirs_set = set()
 
     def __post_init__(self) -> None:
-        # 旧配置或手动保存的空值一律回填默认路径，避免页面/接口再次出现空值。
-        if not self.mirror_db_path:
-            self.mirror_db_path = DEFAULT_MIRROR_DB_PATH
         if self.hostname:
             if not self.hostname.startswith(("http://", "https://")):
                 self.hostname = f"http://{self.hostname}"  # 默认 http
@@ -365,8 +362,6 @@ class Config:
             converted_value = self.convert_value(k, v, type_hints)
             if converted_value is not None:
                 setattr(self, k, converted_value)
-        if not self.mirror_db_path:
-            self.mirror_db_path = DEFAULT_MIRROR_DB_PATH
         self.init()
 
     def get_active_cmd_arr(self):
@@ -400,12 +395,15 @@ class Config:
         return cache_path
 
     @property
+    def mirror_db_path(self):
+        """曲库镜像固定放在缓存目录下，路径由 cache_dir 推导，不再单独配置。"""
+        return os.path.join(self.cache_dir or ".", MIRROR_DB_FILENAME)
+
+    @property
     def temp_dir(self):
-        """临时文件统一放在缓存目录下的 tmp 子目录，清理时不会波及镜像等缓存数据。"""
-        path = os.path.join(self.cache_dir, "tmp")
-        if not os.path.exists(path):
-            os.makedirs(path, exist_ok=True)
-        return path
+        if not os.path.exists(self.temp_path):
+            os.makedirs(self.temp_path)
+        return self.temp_path
 
 
 

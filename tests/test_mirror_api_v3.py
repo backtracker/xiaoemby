@@ -67,7 +67,6 @@ def test_config_loads_emby_api_key_from_setting_file(tmp_path):
         json.dumps(
             {
                 "emby_api_key": PLACEHOLDER,
-                "mirror_db_path": "conf/library_mirror.sqlite3",
             }
         ),
         encoding="utf-8",
@@ -77,11 +76,9 @@ def test_config_loads_emby_api_key_from_setting_file(tmp_path):
     assert Config(**loaded).emby_api_key == PLACEHOLDER
 
 
-def test_empty_mirror_path_is_refilled_on_config_and_save():
-    assert Config(mirror_db_path="").mirror_db_path == "conf/library_mirror.sqlite3"
-    cfg = Config()
-    cfg.update_config({"mirror_db_path": ""})
-    assert cfg.mirror_db_path == "conf/library_mirror.sqlite3"
+def test_mirror_path_is_derived_from_cache_dir():
+    cfg = Config(cache_dir="/tmp/xiaoemby-cache")
+    assert cfg.mirror_db_path == "/tmp/xiaoemby-cache/library_mirror.sqlite3"
 
 
 def test_getsetting_masks_emby_api_key(monkeypatch):
@@ -178,7 +175,7 @@ def install_app(monkeypatch, cfg, *, client_token=None):
 
 
 def test_sync_mirror_route_returns_compact_summary_without_secrets(monkeypatch):
-    cfg = Config(mirror_db_path="conf/library_mirror.sqlite3", emby_api_key=PLACEHOLDER)
+    cfg = Config(emby_api_key=PLACEHOLDER)
     install_app(monkeypatch, cfg)
     fake = FakeSync(mirror_result())
     monkeypatch.setattr(system, "sync_mirror", fake)
@@ -195,7 +192,7 @@ def test_sync_mirror_route_returns_compact_summary_without_secrets(monkeypatch):
 
 
 def test_sync_progress_endpoint_reports_latest_fetch_and_finishes(monkeypatch):
-    cfg = Config(mirror_db_path="conf/library_mirror.sqlite3")
+    cfg = Config()
     install_app(monkeypatch, cfg)
     monkeypatch.setattr(system, "sync_mirror", FakeSync(mirror_result()))
 
@@ -210,7 +207,7 @@ def test_sync_progress_endpoint_reports_latest_fetch_and_finishes(monkeypatch):
 
 
 def test_sync_mirror_route_defaults_to_auto_and_reports_resolved_kind(monkeypatch):
-    cfg = Config(mirror_db_path="conf/library_mirror.sqlite3")
+    cfg = Config()
     install_app(monkeypatch, cfg)
     fake = FakeSync(mirror_result(ok=False, skipped=True, reason="unconfigured", kind="weekly"))
     monkeypatch.setattr(system, "sync_mirror", fake)
@@ -223,7 +220,7 @@ def test_sync_mirror_route_defaults_to_auto_and_reports_resolved_kind(monkeypatc
 
 
 def test_sync_mirror_route_falls_back_to_running_emby_client_token(monkeypatch):
-    cfg = Config(mirror_db_path="conf/library_mirror.sqlite3")
+    cfg = Config()
     install_app(monkeypatch, cfg, client_token=PLACEHOLDER)
     fake = FakeSync(mirror_result())
     monkeypatch.setattr(system, "sync_mirror", fake)
@@ -235,7 +232,7 @@ def test_sync_mirror_route_falls_back_to_running_emby_client_token(monkeypatch):
 
 
 def test_sync_mirror_route_rejects_unknown_kind(monkeypatch):
-    cfg = Config(mirror_db_path="conf/library_mirror.sqlite3")
+    cfg = Config()
     install_app(monkeypatch, cfg)
     fake = FakeSync(mirror_result())
     monkeypatch.setattr(system, "sync_mirror", fake)
@@ -248,7 +245,7 @@ def test_sync_mirror_route_rejects_unknown_kind(monkeypatch):
 
 
 def test_sync_mirror_route_structures_failures_without_leaking_details(monkeypatch):
-    cfg = Config(mirror_db_path="conf/library_mirror.sqlite3", emby_api_key=PLACEHOLDER)
+    cfg = Config(emby_api_key=PLACEHOLDER)
     install_app(monkeypatch, cfg)
     boom = RuntimeError(f"connect to {PLACEHOLDER} failed")
     monkeypatch.setattr(system, "sync_mirror", FakeSync(boom))
@@ -283,17 +280,16 @@ class OneItemClient:
 
 
 def test_mirror_status_reports_version_count_and_last_sync_without_secrets(tmp_path, monkeypatch):
-    path = str(tmp_path / "mirror.sqlite3")
-    cfg = Config(mirror_db_path=path, emby_api_key=PLACEHOLDER)
+    cfg = Config(cache_dir=str(tmp_path), emby_api_key=PLACEHOLDER)
     install_app(monkeypatch, cfg)
 
-    cfg.mirror_db_path = ""
+    cfg.cache_dir = str(tmp_path / "missing")
     empty = asyncio.run(system.mirror_status())
     assert empty["configured"] is False and empty["version"] == 0
     assert empty["tracks"] == 0 and empty["last_sync"] is None
     assert PLACEHOLDER not in json.dumps(empty)
 
-    cfg.mirror_db_path = path
+    cfg.cache_dir = str(tmp_path)
     real_sync_mirror(cfg, client=OneItemClient(), today="2026-11-27")
     status = asyncio.run(system.mirror_status())
 
@@ -301,4 +297,4 @@ def test_mirror_status_reports_version_count_and_last_sync_without_secrets(tmp_p
     assert status["version"] == 1 and status["tracks"] == 1
     assert status["last_sync"] == "2026-11-27"
     assert PLACEHOLDER not in json.dumps(status)
-    assert path not in json.dumps(status)
+    assert cfg.mirror_db_path not in json.dumps(status)

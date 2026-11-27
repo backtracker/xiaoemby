@@ -301,12 +301,13 @@
                 </div>
 
                 <h3 class="group-title">本地曲库镜像</h3>
-                <div class="hint">镜像存储路径在「6. 系统 → 文件路径」中配置，默认已填好。首次同步会全量拉取曲库，之后每日增量、每周对账。</div>
+                <div class="hint">镜像固定存为「缓存目录/library_mirror.sqlite3」，无需单独配置。首次同步全量拉取曲库，之后每日增量、每周对账。</div>
                 <div class="ops" style="margin-top:10px">
                     <button type="button" class="btn pri" id="mirror_sync_full" data-mirror-sync="true" data-kind="full">立即同步本地曲库（首次全量）</button>
                     <button type="button" class="btn sm" id="mirror_sync_daily" data-mirror-sync="true" data-kind="daily">每日增量</button>
                     <button type="button" class="btn sm" id="mirror_sync_weekly" data-mirror-sync="true" data-kind="weekly">每周对账</button>
                 </div>
+                <div class="hint" id="mirror_status" style="margin-top:8px"></div>
                 <div class="hint" id="mirror_sync_result" style="margin-top:8px"></div>
 
                 <h3 class="group-title">歌单规模与排序</h3>
@@ -573,15 +574,15 @@
                     <div class="field">
                         <label for="cache_dir">缓存目录</label>
                         <input id="cache_dir" type="text" value="cache" />
+                        <div class="hint">曲库镜像固定存为「缓存目录/library_mirror.sqlite3」，无需另行配置。</div>
+                    </div>
+                    <div class="field">
+                        <label for="temp_path">临时目录</label>
+                        <input id="temp_path" type="text" value="temp" />
                     </div>
                     <div class="field">
                         <label for="log_file">日志路径</label>
                         <input id="log_file" type="text" value="xiaoemby.log" />
-                    </div>
-                    <div class="field">
-                        <label for="mirror_db_path">本地曲库镜像路径</label>
-                        <input id="mirror_db_path" type="text" value="conf/library_mirror.sqlite3" />
-                        <div class="hint">默认已填好；若手动清空，保存时会自动恢复默认值。改路径后请先「保存配置」再到 AI 今日推荐区同步。</div>
                     </div>
                 </div>
 
@@ -607,12 +608,11 @@
                         </select>
                     </div>
                     <div class="field">
-                        <label for="enable_auto_clean_temp">自动清理临时文件</label>
+                        <label for="enable_auto_clean_temp">自动清理临时目录</label>
                         <select id="enable_auto_clean_temp">
                             <option value="true" selected>true</option>
                             <option value="false">false</option>
                         </select>
-                        <div class="hint">只清理缓存目录下的 tmp 子目录，不影响曲库镜像与推荐缓存。</div>
                     </div>
                 </div>
             </section>
@@ -662,7 +662,7 @@
                         <span class="material-icons" aria-hidden="true">delete_sweep</span> 清空缓存
                     </button>
                     <button id="cleantempdir" class="btn">
-                        <span class="material-icons" aria-hidden="true">folder_delete</span> 清空临时文件
+                        <span class="material-icons" aria-hidden="true">folder_delete</span> 清空临时目录
                     </button>
                     <a href="/downloadlog" class="btn">
                         <span class="material-icons" aria-hidden="true">download</span> 下载日志文件

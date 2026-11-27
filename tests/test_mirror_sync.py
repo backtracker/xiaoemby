@@ -179,13 +179,7 @@ def test_crontab_wires_mirror_jobs_only_when_configured(monkeypatch):
         cron, "add_job_mirror_sync", lambda *a, **kw: calls.append((a, kw))
     )
     app = SimpleNamespace(
-        config=SimpleNamespace(
-            crontab_json="", mirror_db_path="", enable_auto_clean_temp=False
-        )
+        config=SimpleNamespace(crontab_json="", enable_auto_clean_temp=False)
     )
-    cron.reload_config(app)
-    assert calls == []
-
-    app.config.mirror_db_path = "mirror.db"
     cron.reload_config(app)
     assert [kw.get("arg1") for _a, kw in calls] == ["daily", "weekly"]

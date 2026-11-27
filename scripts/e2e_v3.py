@@ -49,7 +49,7 @@ from xiaomusic.utils.pr_events import (  # noqa: E402
 
 SETTINGS_PATH = Path("/home/nick/workspace/xiaoemby/conf/setting.json")
 WORK_DIR = Path("/tmp/opencode/e2e-v3")
-MIRROR_DB = WORK_DIR / "mirror.db"
+MIRROR_DB = WORK_DIR / "library_mirror.sqlite3"
 
 # LLM 在端到端里用桩（规格 Testing Decisions：不测真实 LLM 调用）。
 STUB_RECIPE = {
@@ -74,9 +74,7 @@ def load_settings(path: Path = SETTINGS_PATH) -> dict[str, Any]:
     return data
 
 
-def make_config(
-    settings: dict[str, Any], *, mirror_db_path: str, cache_dir: str
-) -> Config:
+def make_config(settings: dict[str, Any], *, cache_dir: str) -> Config:
     """按 Config 已知字段装载配置；未知字段与复杂结构跳过，绝不输出值。"""
     cfg = Config()
     known = {f.name: f for f in dataclass_fields(Config)}
@@ -97,7 +95,6 @@ def make_config(
         except (TypeError, ValueError):
             continue
         setattr(cfg, key, value)
-    cfg.mirror_db_path = mirror_db_path
     cfg.cache_dir = cache_dir
     cfg.enable_daily_recommend = True
     return cfg
@@ -335,7 +332,7 @@ def run() -> dict[str, Any]:
     user_id = str(settings["emby_user_id"])
     session = new_session()
 
-    cfg = make_config(settings, mirror_db_path=str(MIRROR_DB), cache_dir=str(WORK_DIR / "real"))
+    cfg = make_config(settings, cache_dir=str(WORK_DIR))
 
     print("步骤 1/6：通过产品同步入口（API）首次全量导入本地曲库镜像…", flush=True)
     api_result = import_mirror_via_api(cfg, session)
@@ -410,11 +407,7 @@ def run() -> dict[str, Any]:
             events=synthetic,
             raw_rows=len(synthetic),
         )
-        synthetic_cfg = make_config(
-            settings,
-            mirror_db_path=str(MIRROR_DB),
-            cache_dir=str(WORK_DIR / "synthetic"),
-        )
+        synthetic_cfg = make_config(settings, cache_dir=str(WORK_DIR / "synthetic"))
         synthetic_wrapper = MirrorEmby(rows, user_id, state, synthetic_result)
         pr_rec = generate(synthetic_cfg, synthetic_wrapper)
         pr_check = check_playlist(pr_rec, expected, by_id)

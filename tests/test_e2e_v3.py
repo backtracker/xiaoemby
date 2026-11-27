@@ -26,15 +26,11 @@ def test_make_config_skips_unknown_keys_and_overrides_paths(tmp_path):
         "this_key_does_not_exist": 1,
         "devices": {"a": {"did": "1"}},
     }
-    cfg = e2e_v3.make_config(
-        settings,
-        mirror_db_path=str(tmp_path / "mirror.db"),
-        cache_dir=str(tmp_path / "cache"),
-    )
+    cfg = e2e_v3.make_config(settings, cache_dir=str(tmp_path / "cache"))
     assert cfg.emby_host == "https://example.invalid"
     assert cfg.emby_user_id == "uid-1"
     assert cfg.daily_recommend_count == 7
-    assert cfg.mirror_db_path == str(tmp_path / "mirror.db")
+    assert cfg.mirror_db_path == str(tmp_path / "cache" / "library_mirror.sqlite3")
     assert cfg.cache_dir == str(tmp_path / "cache")
     assert not hasattr(cfg, "this_key_does_not_exist")
     assert cfg.devices == {}

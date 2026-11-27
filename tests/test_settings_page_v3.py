@@ -181,26 +181,20 @@ def test_js_roundtrip_mechanism_intact():
     assert 'setting.find("input, select, textarea")' in JS
 
 
-def test_mirror_db_path_lives_in_system_and_sync_buttons_in_ai():
-    field = re.search(
-        r'<div class="field">\s*<label for="mirror_db_path">(.*?)</label>(.*?)</div>',
-        SYSTEM,
-        re.S,
-    )
-    assert field is not None, "mirror_db_path 应配置在「6. 系统 → 文件路径」"
-    label, body = field.group(1), field.group(2)
-    assert CJK.search(re.sub(r"<[^>]+>", "", label))
-    control = re.search(r"<input[^>]*>", body)
-    assert control is not None
-    assert 'id="mirror_db_path"' in control.group(0)
-    assert f'value="{Config().mirror_db_path}"' in control.group(0), "应预填默认存储路径"
-    assert Config().mirror_db_path, "镜像路径必须有默认值"
-    assert "默认已填好" in body
+def test_mirror_path_is_derived_from_cache_dir_and_sync_buttons_in_ai():
+    assert 'id="mirror_db_path"' not in HTML
+    assert 'id="enable_auto_clean_temp"' in HTML
+    assert 'id="cleantempdir"' in HTML
+    assert 'id="temp_path"' in HTML
+    assert "library_mirror.sqlite3" in SYSTEM
+    assert Config().mirror_db_path.endswith("library_mirror.sqlite3")
 
     marker = '<h3 class="group-title">本地曲库镜像</h3>'
     assert marker in SECTION, "同步入口应留在 AI 今日推荐分区"
     block = SECTION[SECTION.index(marker) :]
-    assert "6. 系统" in block and "首次同步会全量拉取曲库" in block
+    assert "缓存目录/library_mirror.sqlite3" in block
+    assert "首次同步全量拉取曲库" in block
+    assert 'id="mirror_status"' in block
 
     for button_id, text in (
         ("mirror_sync_full", "立即同步本地曲库（首次全量）"),

@@ -297,8 +297,7 @@ class Crontab:
             self.add_job("0 3 * * *", clean_temp_job)
             self.log.info("已添加每日凌晨3点定时清理临时文件任务")
 
-        # 镜像同步按需注册：未配置本地镜像路径时不产生任何调度副作用。
-        if getattr(xiaomusic.config, "mirror_db_path", ""):
-            self.add_job_mirror_sync("0 4 * * *", xiaomusic, did="", arg1="daily")
-            self.add_job_mirror_sync("30 4 * * 0", xiaomusic, did="", arg1="weekly")
-            self.log.info("已添加曲库镜像每日增量与每周对账任务")
+        # 镜像固定在缓存目录，同步任务常驻（未配置凭据时同步会安全跳过）。
+        self.add_job_mirror_sync("0 4 * * *", xiaomusic, did="", arg1="daily")
+        self.add_job_mirror_sync("30 4 * * 0", xiaomusic, did="", arg1="weekly")
+        self.log.info("已添加曲库镜像每日增量与每周对账任务")
