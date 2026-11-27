@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -12,23 +14,8 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 import e2e_v3  # noqa: E402
 
+from xiaomusic.config import Config  # noqa: E402
 from xiaomusic.utils.pr_events import LOCAL_TZ, PREvent  # noqa: E402
-
-
-def _raw(i: int) -> dict:
-    return {
-        "Id": str(i),
-        "Name": f"歌{i}",
-        "Genres": ["流行", "摇滚"] if i % 2 else ["华语"],
-        "ProductionYear": 2020 + i % 3,
-        "RunTimeTicks": 200 * 10_000_000,
-        "ArtistItems": [{"Name": f"歌手{i % 3}"}],
-        "AlbumArtist": f"歌手{i % 3}",
-        "Album": f"专辑{i}",
-        "DateCreated": "2026-01-01T00:00:00.0000000Z",
-        "Path": f"/music/{i}.flac",
-        "UserData": {"PlayCount": i % 4, "IsFavorite": False, "LastPlayedDate": None},
-    }
 
 
 def test_make_config_skips_unknown_keys_and_overrides_paths(tmp_path):
@@ -53,14 +40,20 @@ def test_make_config_skips_unknown_keys_and_overrides_paths(tmp_path):
     assert cfg.devices == {}
 
 
-def test_build_mirror_state_feeds_all_pages_without_losing_items():
-    pages = [[_raw(i) for i in range(0, 4)], [_raw(i) for i in range(4, 7)]]
-    state = e2e_v3.build_mirror_state(pages, "uid-1", chunk_size=2)
-    items = state["mirror"]["items"]
-    assert state["mirror"]["version"] == 1
-    assert len(items) == 7
-    assert set(items) == {str(i) for i in range(7)}
-    assert items["3"]["users"]["uid-1"]["play_count"] == 3
+def test_import_mirror_via_api_calls_full_sync_route(monkeypatch):
+    captured = {}
+
+    async def fake_route(request):
+        body = json.loads((await request.body()).decode("utf-8"))
+        captured["kind"] = body["kind"]
+        return {"ok": True, "kind": "full", "version": 1, "tracks": 7}
+
+    monkeypatch.setattr(e2e_v3.system_router, "sync_mirror_now", fake_route)
+    result = e2e_v3.import_mirror_via_api(
+        Config(), SimpleNamespace(get=lambda: None, verify=False)
+    )
+    assert result["tracks"] == 7
+    assert captured["kind"] == "full"
 
 
 def test_synthetic_events_span_over_week_and_are_valid():

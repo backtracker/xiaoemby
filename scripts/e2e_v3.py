@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from collections import Counter
@@ -15,14 +16,17 @@ from dataclasses import fields as dataclass_fields
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import requests
+from starlette.requests import Request
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from xiaomusic.api.routers import system as system_router  # noqa: E402
 from xiaomusic.config import Config  # noqa: E402
 from xiaomusic.utils.behavior_profile import build_profile  # noqa: E402
 from xiaomusic.utils.candidate_pool import (  # noqa: E402
@@ -35,7 +39,7 @@ from xiaomusic.utils.daily_recommend import (  # noqa: E402
     _today,
     generate,
 )
-from xiaomusic.utils.library_mirror import LibraryMirror, MirrorModel  # noqa: E402
+from xiaomusic.utils.library_mirror import LibraryMirror  # noqa: E402
 from xiaomusic.utils.pr_events import (  # noqa: E402
     LOCAL_TZ,
     EmbyPRClient,
@@ -46,11 +50,6 @@ from xiaomusic.utils.pr_events import (  # noqa: E402
 SETTINGS_PATH = Path("/home/nick/workspace/xiaoemby/conf/setting.json")
 WORK_DIR = Path("/tmp/opencode/e2e-v3")
 MIRROR_DB = WORK_DIR / "mirror.db"
-PAGE_SIZE = 500
-FIELD_LIST = (
-    "Genres,ProductionYear,Path,UserDataLastPlayedDate,UserDataPlayCount,"
-    "RunTimeTicks,ArtistItems,AlbumArtist,Album,IsFavorite,DateCreated"
-)
 
 # LLM 在端到端里用桩（规格 Testing Decisions：不测真实 LLM 调用）。
 STUB_RECIPE = {
@@ -111,54 +110,40 @@ def new_session() -> requests.Session:
     return session
 
 
-def fetch_full_library(
-    session: requests.Session, host: str, key: str, user_id: str, *, page_size: int = PAGE_SIZE
-) -> tuple[list[list[dict[str, Any]]], int]:
-    """分页全量拉取 Audio；只读 GET，认证头来自运行时配置。"""
-    host = host.rstrip("/")
-    params = {
-        "IncludeItemTypes": "Audio",
-        "Recursive": "true",
-        "Fields": FIELD_LIST,
-        "StartIndex": 0,
-        "Limit": page_size,
-    }
-    url = f"{host}/emby/Users/{user_id}/Items"
-    first = session.get(
-        url, params=params, headers={"X-Emby-Token": key}, timeout=120
+def _json_request(body: dict[str, Any]) -> Request:
+    """构造一个最小 Starlette 请求，直接调用真实路由函数（与 HTTP 同一路径）。"""
+    payload = json.dumps(body).encode("utf-8")
+    sent = False
+
+    async def receive():
+        nonlocal sent
+        if sent:
+            return {"type": "http.disconnect"}
+        sent = True
+        return {"type": "http.request", "body": payload, "more_body": False}
+
+    return Request(
+        {"type": "http", "method": "POST", "headers": [(b"content-type", b"application/json")]},
+        receive,
     )
-    first.raise_for_status()
-    payload = first.json()
-    total = int(payload["TotalRecordCount"])
-    pages: list[list[dict[str, Any]]] = [payload["Items"]]
-    for start in range(page_size, total, page_size):
-        params = dict(params, StartIndex=start)
-        response = session.get(
-            url, params=params, headers={"X-Emby-Token": key}, timeout=120
-        )
-        response.raise_for_status()
-        pages.append(response.json()["Items"])
-    fetched = sum(len(page) for page in pages)
-    if fetched != total:
-        raise RuntimeError(f"分页曲库数量不一致: 期望 {total}, 实取 {fetched}")
-    return pages, total
 
 
-def build_mirror_state(
-    pages: list[list[dict[str, Any]]], user_id: str, *, chunk_size: int = 1
-) -> dict[str, Any]:
-    """把全部页喂给 from_emby_pages；每页一块，避免归约器逐条深拷贝的平方开销。
+def import_mirror_via_api(cfg: Config, session: requests.Session) -> dict[str, Any]:
+    """通过产品同步入口（API 路由）做首次全量导入，验证真实用户路径。"""
+    original_sync = system_router.sync_mirror
+    original_app = system_router.xiaomusic
 
-    chunk_size 的单位是「页」（默认 1 页 = 500 首）；一次性归约 7 万首会退化成
-    平方级 deepcopy，本地验收无法完成。分块结果按 Emby 权威条目合并后统一 FULL_IMPORT。
-    """
-    combined = MirrorModel.init()
-    for start in range(0, len(pages), chunk_size):
-        part = MirrorModel.from_emby_pages(pages[start : start + chunk_size], user_id)
-        combined["emby"]["items"].update(part["emby"]["items"])
-        combined["emby"]["changes"].extend(part["emby"]["changes"])
-    combined["emby"]["watermark"] = len(combined["emby"]["items"])
-    return MirrorModel.reduce(combined, {"type": "FULL_IMPORT"})
+    def sync_with_transport(config, **kwargs):
+        kwargs["transport"] = session  # 自签 HTTPS：复用本地验收的只读会话
+        return original_sync(config, **kwargs)
+
+    system_router.sync_mirror = sync_with_transport
+    system_router.xiaomusic = SimpleNamespace(getconfig=lambda: cfg, emby=None)
+    try:
+        return asyncio.run(system_router.sync_mirror_now(_json_request({"kind": "full"})))
+    finally:
+        system_router.sync_mirror = original_sync
+        system_router.xiaomusic = original_app
 
 
 def load_snapshot_with_user_state(
@@ -350,17 +335,31 @@ def run() -> dict[str, Any]:
     user_id = str(settings["emby_user_id"])
     session = new_session()
 
-    print("步骤 1/6：分页拉取真实 Emby 全库（只读）…", flush=True)
-    pages, total = fetch_full_library(session, host, key, user_id)
-    print(f"  已拉取 {len(pages)} 页 / {total} 首 Audio", flush=True)
+    cfg = make_config(settings, mirror_db_path=str(MIRROR_DB), cache_dir=str(WORK_DIR / "real"))
 
-    print("步骤 2/6：归约镜像并落库（/tmp/opencode/e2e-v3/）…", flush=True)
-    state = build_mirror_state(pages, user_id)
+    print("步骤 1/6：通过产品同步入口（API）首次全量导入本地曲库镜像…", flush=True)
+    api_result = import_mirror_via_api(cfg, session)
+    if not api_result.get("ok"):
+        raise RuntimeError(f"镜像同步入口失败: {api_result.get('reason')}")
+    print(
+        f"  入口返回：{api_result['kind']} / 版本 {api_result['version']} / 曲目 {api_result['tracks']}",
+        flush=True,
+    )
+
+    print("步骤 2/6：读取本地镜像快照（/tmp/opencode/e2e-v3/）…", flush=True)
     mirror = LibraryMirror(str(MIRROR_DB))
     try:
-        mirror.commit(state)
         info = mirror.version_info()
         rows = load_snapshot_with_user_state(mirror, user_id)
+        state = {
+            "day": 0,
+            "stale_days": int(cfg.mirror_stale_days),
+            "mirror": {
+                "version": info["version"],
+                "last_sync_day": info.get("last_sync_day"),
+                "items": {row["id"]: row for row in rows},
+            },
+        }
         played = sum(
             1
             for row in rows
@@ -382,8 +381,6 @@ def run() -> dict[str, Any]:
         )
 
         install_llm_stub()
-        today_cache = WORK_DIR / "real"
-        cfg = make_config(settings, mirror_db_path=str(MIRROR_DB), cache_dir=str(today_cache))
         expected = int(cfg.daily_recommend_count)
         wrapper = MirrorEmby(rows, user_id, state, pr_result)
         by_id = wrapper.by_id
@@ -436,7 +433,12 @@ def run() -> dict[str, Any]:
         session.close()
 
     return {
-        "mirror": {"total": total, "rows": len(rows), "played": played, "version": info["version"]},
+        "mirror": {
+            "total": api_result["tracks"],
+            "rows": len(rows),
+            "played": played,
+            "version": info["version"],
+        },
         "pr": summary,
         "real": first_check,
         "freeze_ok": freeze_ok,
