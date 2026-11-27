@@ -44,7 +44,7 @@
 <p class="lead">
 <strong>这一版回答的问题</strong>：三段式被识破成「固定套路」后，改成<strong>按分数排名决定出现顺序</strong>会不会既不像剧本、又不随机？<br>
 代码事实：现有 <code>pick_tracks()</code>（第 656 行）本来就是「全局 <code>base_score</code> 排序 + 收藏锚点 + 流派游走 + 探索配额 + MMR」的排名式选曲；<code>pick_tracks_segmented()</code>（第 866 行）是在它之上按 <code>share</code> 切成三段逐段调用——套路来自切段层，不是排名。<br>
-下面可切换三种排序、逐日模拟漂移。曲目名为真实样本占位，不代表真实推荐结果。<strong>一次性原型，不要合入生产。</strong>
+下面可切换三种排序、按真实日期推进时间。<strong>降权只来自真实播放后的行为结果</strong>：极短播放强降权、未完成弱降权、听完或只推荐没播放都不降权；推荐曝光只记数去重复。曲目名为真实样本占位。<strong>一次性原型，不要合入生产。</strong>
 </p>
 
 <div class="flash" id="flash">当前变化：初始状态。</div>
@@ -58,8 +58,10 @@
       <b>第几天</b><span id="s-day"></span>
       <b>样本 / 置信度</b><span id="s-conf"></span>
       <b>换一批次数</b><span id="s-batch"></span>
-      <b>与昨天相比</b><span id="s-drift"></span>
-      <b>行为事件</b><span id="s-events"></span>
+      <b>与上一版相比</b><span id="s-drift"></span>
+      <b>播放结果事件</b><span id="s-events"></span>
+      <b>曝光次数（只去重复）</b><span id="s-expo"></span>
+      <b>焦点播放结果</b><span id="s-evidence"></span>
     </div>
   </div>
   <div class="card">
@@ -139,14 +141,24 @@ const Logic = (() => {
       : (t.lastPlayedDays <= 30 && t.windowCount >= 2 ? 0.6 : 0);
     const novelty = (1 - familiar + (t.createdRecently ? 0.3 : 0)) * 0.8;
     const ev = ctx.events[t.id] || {};
+    // 时间按真实日期流逝（负反馈 7 天半衰期），不按「生成过几次歌单」算
+    const ageOf = e => (e && e.atDay !== undefined) ? Math.max(0, ctx.day - e.atDay) : 99;
+    const dec = e => 0.5 ** (ageOf(e) / 7);
     let trackPen = 0, artistPen = 0, genrePen = 0;
-    if (ev.justPlayed) trackPen = 0.7;
-    if (ev.recommended) trackPen = Math.max(trackPen, 0.7);   // 昨天推荐过：跨天降权（v2 已有机制）
-    if (ev.short) trackPen = Math.max(trackPen, 0.5);
+    if (ev.outcome === 'short') trackPen = 0.5 * dec(ev);          // 极短播放：强软降权
+    if (ev.outcome === 'incomplete') trackPen = 0.25 * dec(ev);    // 未完成播放：弱软降权
+    if (ev.outcome === 'completed' || ev.outcome === 'unplayed') trackPen = 0; // 听完 / 只推荐没播放 → 不降权
+    // 四层证据门槛：单曲降权不自动升级到艺人 / 流派
+    const negArtists = {}, negGenres = {};
     for (const other of TRACKS) {
-      if (other.artist === t.artist && (ctx.events[other.id] || {}).short) artistPen = 0.5;
-      if (other.genre === t.genre && (ctx.events[other.id] || {}).short) genrePen = 0.3;
+      const oe = ctx.events[other.id] || {};
+      if (oe.outcome !== 'short' && oe.outcome !== 'incomplete') continue;
+      (negArtists[other.artist] = negArtists[other.artist] || []).push(oe);
+      (negGenres[other.genre] = negGenres[other.genre] || []).push(oe);
     }
+    const strongest = list => list.reduce((m, e) => Math.max(m, dec(e)), 0);
+    if ((negArtists[t.artist] || []).length >= 2) artistPen = 0.5 * strongest(negArtists[t.artist]); // ≥2 首不同歌
+    if ((negGenres[t.genre] || []).length >= 2) genrePen = 0.3 * strongest(negGenres[t.genre]);     // ≥2 个不同艺人
     const repeat = (1 - trackPen) * (1 - artistPen) * (1 - genrePen);
     const fresh = t.createdRecently ? 1.2 : 1.0;
     const exposure = ctx.exposure[t.genre] || 0;
@@ -162,9 +174,10 @@ const Logic = (() => {
 
   function sourceOf(t, ctx) {
     const ev = ctx.events[t.id] || {};
-    if (ev.short) return ['极短播放·已降权', ''];
-    if (ev.justPlayed) return ['刚听完·已降权', ''];
-    if (ev.recommended) return ['昨天推荐过·跨天降权', ''];
+    if (ev.outcome === 'short') return ['极短播放·强降权', ''];
+    if (ev.outcome === 'incomplete') return ['未完成播放·弱降权', ''];
+    if (ev.outcome === 'completed') return ['完整播放·不降权', ''];
+    if (ev.outcome === 'unplayed') return ['推荐过但没播放·不降权', ''];
     if (t.favorite) return ['收藏锚点 / 完整播放', ''];
     if (t.windowCount >= 2) return ['重复收听（≥2 次）', ''];
     if (t.unheardFamousArtist) return ['探索·熟悉歌手未听', 'explore'];
@@ -176,8 +189,10 @@ const Logic = (() => {
   function reasonOf(t, ctx) {
     const p = score(t, ctx).parts;
     const exp = ctx.exposure[t.genre] || 0;
-    if ((ctx.events[t.id] || {}).short || (ctx.events[t.id] || {}).justPlayed) return '刚发生的负反馈把分数压低';
-    if ((ctx.events[t.id] || {}).recommended) return '昨天推荐过，跨天降权';
+    const out = (ctx.events[t.id] || {}).outcome;
+    if (out === 'short' || out === 'incomplete') return '播放结果（没听完）按 7 天半衰期降权';
+    if (out === 'completed') return '听完，不降权，可进回访候选';
+    if (out === 'unplayed') return '只曝光没播放：无证据，不降权';
     if (exp >= 3 && p.ucb < 0.25) return '曝光偏高，靠总分仍入选';
     if (t.cold) return '冷门簇 ucb 加成';
     if (t.unheardFamousArtist || t.similar) return '熟悉语境下的探索';
@@ -247,15 +262,18 @@ const ORDERS = [
 const FREE = [
   ['pr','PR 模式'],['hybrid','混合模式'],['v2','v2 模式'],
   ['samples7','样本恢复 7 天'],['samples3','样本降到 3 天'],
-  ['generate','生成今日歌单'],['batch','换一批'],['nextday','进入下一天（模拟漂移）'],
-  ['short','江南：极短播放'],['played','973820：刚听完'],['fav','切换收藏江南'],
+  ['generate','生成今日推荐'],['batch','换一批'],
+  ['skip1','时间过 1 天'],['skip3','时间过 3 天（没生成歌单）'],
+  ['out-complete','江南：完整播放'],['out-incomplete','江南：未完成(0.6)'],
+  ['out-short','江南：极短(<60s)'],['out-unplayed','江南：推荐过但没播放'],
+  ['fav','切换收藏江南'],
 ];
 
 let state, scenario = null, stepIdx = 0;
 
 function reset() {
   state = { mode:'pr', ordering:'rank', samples:25, batch:0, day:1, events:{},
-    favorites:new Set(['jiangan']), exposure:{'流行':3,'民谣':1,'摇滚':2},
+    favorites:new Set(['jiangan']), exposure:{'流行':3,'民谣':1,'摇滚':2}, exposureIds:{},
     playlist:null, prevIds:null, drift:'—', last:'初始状态：PR 模式、纯分数排名、第 1 天。' };
   Logic.TRACKS.forEach(t => { t.favorite = state.favorites.has(t.id); });
 }
@@ -274,24 +292,24 @@ function dispatch(action, note) {
         : { ordering:state.ordering, groups:[{ name:'全天排名（无分段）',
             share:'20 首按分数顺序', rule:state.ordering === 'mmr' ? '排名 + 多样性，无段、无主题' : '纯分数降序，无段、无主题',
             items: Logic.pickRanked(state, state.ordering) }] };
-      const now = state.playlist.groups.flatMap(g => g.items.map(x => x.t.id));
-      state.drift = before ? `${now.filter((id, i) => id !== before[i]).length} / 20 首位置变化` : '首日，无昨日对比';
+      {
+        const now = state.playlist.groups.flatMap(g => g.items.map(x => x.t.id));
+        now.forEach(id => { state.exposureIds[id] = (state.exposureIds[id] || 0) + 1; });  // 曝光只记数，不降权
+        state.drift = before ? `${now.filter((id, i) => id !== before[i]).length} / 20 首位置变化` : '首版，无对比';
+      }
       break;
-    case 'batch': state.batch += 1; state.prevIds = before; dispatch('generate', '换一批：沿用当天档位与排序方式，只重排。'); return;
-    case 'nextday':
-      state.day += 1;
-      state.events = {};
-      if (before) before.forEach(id => {
-        const t = Logic.TRACKS.find(x => x.id === id);
-        if (t) state.exposure[t.genre] = (state.exposure[t.genre] || 0) + 1;
-        state.events[id] = { recommended:true };
-      });
-      const seed = Logic.TRACKS[state.day % Logic.TRACKS.length];
-      state.events[seed.id] = Object.assign({}, state.events[seed.id], { short:true });
+    case 'batch': state.batch += 1; state.prevIds = before; dispatch('generate', '换一批：同一天、同一档位与排序，只重排。'); return;
+    case 'skip1': case 'skip3':
+      state.day += (action === 'skip1' ? 1 : 3);
       state.playlist = null;
+      state.last = `时间到第 ${state.day} 天（期间没有生成歌单）——旧播放结果按真实日期衰减，不按生成次数。`;
+      render();
+      return;
+    case 'out-complete': case 'out-incomplete': case 'out-short': case 'out-unplayed': {
+      const outcome = { 'out-complete':'completed', 'out-incomplete':'incomplete', 'out-short':'short', 'out-unplayed':'unplayed' }[action];
+      state.events.jiangan = { outcome, atDay: state.day };
       break;
-    case 'short': state.events.jiangan = Object.assign({}, state.events.jiangan, { short:true }); break;
-    case 'played': state.events['973820'] = Object.assign({}, state.events['973820'], { justPlayed:true }); break;
+    }
     case 'fav':
       if (state.favorites.has('jiangan')) { state.favorites.delete('jiangan'); delete state.events.jiangan; }
       else state.favorites.add('jiangan');
@@ -314,11 +332,23 @@ function render() {
   document.getElementById('s-conf').textContent = `${state.samples} 条 → confidence ${Logic.confidence(state.samples).toFixed(2)}`;
   document.getElementById('s-batch').textContent = String(state.batch);
   document.getElementById('s-drift').textContent = state.drift;
-  const evs = Object.keys(state.events).filter(k => Object.values(state.events[k]).some(Boolean));
-  document.getElementById('s-events').textContent = evs.length ? evs.join('、') : '无';
+  const outcomeName = { completed:'完整播放', incomplete:'未完成', short:'极短播放', unplayed:'推荐过但没播放' };
+  const evs = Object.keys(state.events).map(id => {
+    const e = state.events[id], t = Logic.TRACKS.find(x => x.id === id);
+    return `${t ? t.name : id}：${outcomeName[e.outcome] || e.outcome}（第 ${e.atDay} 天）`;
+  });
+  document.getElementById('s-events').textContent = evs.length ? evs.join('；') : '无';
+  const topExpo = Object.keys(state.exposureIds).sort((a, b) => state.exposureIds[b] - state.exposureIds[a]).slice(0, 3);
+  document.getElementById('s-expo').textContent = topExpo.length
+    ? topExpo.map(id => `${(Logic.TRACKS.find(x => x.id === id) || {}).name || id}×${state.exposureIds[id]}`).join('、') + '（不参与降权）'
+    : '无';
 
   const focus = (state.playlist && state.playlist.groups[0].items[0]) || { t:Logic.TRACKS[0], score:null };
   document.getElementById('focus-name').textContent = focus.t.name;
+  const fe = state.events[focus.t.id];
+  document.getElementById('s-evidence').textContent = fe
+    ? `${outcomeName[fe.outcome] || fe.outcome}（第 ${fe.atDay} 天，距今 ${state.day - fe.atDay} 天，衰减系数 ${(0.5 ** (Math.max(0, state.day - fe.atDay) / 7)).toFixed(2)}）`
+    : '无播放结果证据 → 不降权';
   const p = Logic.score(focus.t, state).parts;
   document.getElementById('formula').textContent =
 `base_score = (1 + taste * 1.5 + ucb) * repeat * fresh + familiar * 0.6 + novelty
@@ -326,6 +356,8 @@ taste  = ${state.mode === 'v2' ? 'v2 累计底分' : '累计底分×0.5 + 窗口
   historic=${p.historic.toFixed(2)}  win=${p.win.toFixed(2)}  conf=${p.conf.toFixed(2)}  prTaste=${p.prTaste.toFixed(2)}
 familiar=${p.familiar.toFixed(2)}  novelty=${p.novelty.toFixed(2)}  repeat=${p.repeat.toFixed(2)}
 fresh=${p.fresh.toFixed(2)}  ucb=${p.ucb.toFixed(2)}  prMultiplier=${p.prMultiplier.toFixed(2)}${state.mode === 'hybrid' ? '（混合模式只用它）' : ''}
+降权  = 只来自真实播放结果：极短 0.5 / 未完成 0.25，按真实日期 7 天半衰期衰减
+        推荐曝光不计降权（只做去重复）；无播放证据 = 不降权
 总分=${focus.score === null ? '（先点生成）' : focus.score}`;
 
   document.getElementById('orderbuttons').innerHTML = ORDERS.map(o =>
@@ -348,12 +380,14 @@ fresh=${p.fresh.toFixed(2)}  ucb=${p.ucb.toFixed(2)}  prMultiplier=${p.prMultipl
   const SCENARIOS = [
     { name:'三段 vs 排名 vs MMR', desc:'同一批曲目、同一天，只改排序方式。看三段式是否真的像剧本，排名是否既自然又不乱。',
       steps:[['segments','三段'],['generate','生成三段版'],['rank','纯排名'],['generate','生成排名版'],['mmr','排名+MMR'],['generate','生成 MMR 版']] },
-    { name:'每天漂移（不随机）', desc:'连续进入下一天：昨日 20 首打上「推荐过」跨天降权、曝光+1、旧 penalty 老化、出现一次新极短播放。看排名如何自己轮换，没有任何人工分段。',
-      steps:[['rank','纯排名'],['generate','第 1 天'],['nextday','进入第 2 天'],['generate','第 2 天'],['nextday','进入第 3 天'],['generate','第 3 天']] },
+    { name:'曝光不等于降权', desc:'给江南标「推荐过但没播放」再生成：曝光次数会涨，但分数不降、名次不动——降权必须等真实播放结果。',
+      steps:[['pr','PR 模式'],['rank','纯排名'],['out-unplayed','江南：推荐过但没播放'],['generate','生成'],['skip1','过 1 天'],['generate','再生成']] },
+    { name:'播放结果决定降权', desc:'同一首江南：极短播放强降权 → 未完成弱降权 → 完整播放不降权。对比名次变化，看「不是每次都能听完」是否被照顾到。',
+      steps:[['pr','PR 模式'],['rank','纯排名'],['out-short','极短'],['generate','看名次'],['out-incomplete','未完成'],['generate','再看名次'],['out-complete','完整'],['generate','恢复']] },
+    { name:'时间按真实日期，不按生成次数', desc:'时间过 3 天但期间不生成歌单；旧播放结果按 7 天半衰期自然衰减，下次生成时不会因为「少生成了几次」而改变。',
+      steps:[['rank','纯排名'],['generate','第 1 天'],['skip3','过 3 天（没生成）'],['generate','第 4 天'],['skip3','再过 3 天'],['generate','第 7 天']] },
     { name:'只有 3 天', desc:'样本降到 3 条、切混合模式。看 confidence 折扣与 ±20% 修正是否只改分数不改结构。',
       steps:[['samples3','样本降到 3 天'],['hybrid','混合模式'],['rank','纯排名'],['generate','生成']] },
-    { name:'刚听完 + 极短播放', desc:'江南极短、973820 刚听完。看负反馈是否把分数压下去、是否还混在榜单里。',
-      steps:[['pr','PR 模式'],['samples7','样本恢复'],['played','标记刚听完'],['short','标记极短'],['generate','生成']] },
   ];
   document.getElementById('tabs').innerHTML = SCENARIOS.map((s, i) =>
     `<button data-i="${i}" class="${scenario === i ? 'active' : ''}">${s.name}</button>`).join('');
