@@ -10,6 +10,17 @@
     <script src="./jquery-3.7.1.min.js?version=1771327223"></script>
     <script src="./setting.js?version=1771327223"></script>
     <link rel="stylesheet" type="text/css" href="./setting.css?version=1771327223" />
+    <style>
+        /* 今日推荐 v3：分组标题与条件可见性标记（沿用设置页既有配色变量） */
+        #sec-ai .group-title { font-size: 12px; color: var(--sub); font-weight: 600; margin: 18px 0 10px; }
+        #sec-ai .mode-chip {
+            display: inline-block; margin-left: 6px; padding: 1px 6px;
+            border-radius: 10px; background: var(--accent-bg); color: var(--info);
+            font-size: 10px; font-weight: 600;
+        }
+        #sec-ai .mode-chip.global { background: var(--line2); color: var(--sub); }
+        #sec-ai .mode-chip.mixed { background: var(--accent-bg); color: var(--accent); }
+    </style>
 </head>
 
 <body>
@@ -250,8 +261,9 @@
             <!-- ============ 5. AI 今日推荐 ============ -->
             <section class="panel" id="sec-ai">
                 <h2><span class="num">5</span>AI 今日推荐</h2>
-                <p class="desc">按天生成推荐歌单，使用 OpenAI 兼容的 LLM 接口。</p>
+                <p class="desc">按天生成推荐歌单，使用 OpenAI 兼容的 LLM 接口。行为参数按「仅 PR 模式生效 / 混合模式门槛 / 全局」标注。</p>
 
+                <h3 class="group-title">LLM 连接</h3>
                 <div class="field">
                     <label for="enable_daily_recommend">启用今日推荐</label>
                     <select id="enable_daily_recommend">
@@ -274,14 +286,6 @@
                         <input id="llm_api_key" type="password" placeholder="sk-..." />
                     </div>
                     <div class="field">
-                        <label for="daily_recommend_count">推荐歌曲数量</label>
-                        <input id="daily_recommend_count" type="number" value="20" />
-                    </div>
-                    <div class="field">
-                        <label for="explore_ratio">探索比例（0 ~ 1）</label>
-                        <input id="explore_ratio" type="number" min="0" max="1" step="0.05" value="0.15" />
-                    </div>
-                    <div class="field">
                         <label for="llm_max_tokens">输出预算（max_tokens）</label>
                         <input id="llm_max_tokens" type="number" min="1" step="100" value="6000" />
                     </div>
@@ -295,6 +299,245 @@
                     </select>
                     <div class="hint">推理模型思考会占用预算；太小会导致生成失败并回退本地混歌</div>
                 </div>
+
+                <h3 class="group-title">歌单规模与排序</h3>
+                <div class="grid2">
+                    <div class="field">
+                        <label for="daily_recommend_count">推荐歌曲数量<span class="mode-chip global" data-mode="global">全局</span></label>
+                        <input id="daily_recommend_count" type="number" min="10" max="40" step="1" value="20" />
+                        <div class="hint">每天生成的歌单曲目数，范围 10–40。</div>
+                    </div>
+                    <div class="field">
+                        <label for="explore_ratio">探索比例（0 ~ 1）<span class="mode-chip global" data-mode="global">全局</span></label>
+                        <input id="explore_ratio" type="number" min="0" max="1" step="0.05" value="0.15" />
+                        <div class="hint">探索池占整份歌单的比例，步进 0.05。</div>
+                    </div>
+                    <div class="field">
+                        <label for="freshness_weight">新鲜度权重<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="freshness_weight" type="number" min="0" max="1" step="0.05" value="0.9" />
+                        <div class="hint">新发行与近期偏好在打分中的权重，起点值 0.9。</div>
+                    </div>
+                    <div class="field">
+                        <label for="diversity_weight">多样性权重<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="diversity_weight" type="number" min="0" max="1" step="0.05" value="0.8" />
+                        <div class="hint">去相似与流派/语言约束的权重，起点值 0.8。</div>
+                    </div>
+                    <div class="field">
+                        <label for="mmr_lambda">MMR 参数 λ<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="mmr_lambda" type="number" min="0" max="1" step="0.05" value="0.7" />
+                        <div class="hint">相关性与多样性之间的平衡系数，起点值 0.7。</div>
+                    </div>
+                    <div class="field">
+                        <label for="front_five_genre_cap">前五流派上限（首）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="front_five_genre_cap" type="number" min="1" max="5" step="1" value="2" />
+                        <div class="hint">前五重点区内同一流派最多出现的曲目数。</div>
+                    </div>
+                    <div class="field">
+                        <label for="front_five_language_cap">前五语言上限（首）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="front_five_language_cap" type="number" min="1" max="5" step="1" value="3" />
+                        <div class="hint">前五重点区内同一语言最多出现的曲目数。</div>
+                    </div>
+                    <div class="field">
+                        <label for="front_five_foreign_min">前五非华语最少（首）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="front_five_foreign_min" type="number" min="0" max="3" step="1" value="1" />
+                        <div class="hint">前五重点区至少包含的非华语曲目数。</div>
+                    </div>
+                    <div class="field">
+                        <label for="front_five_foreign_max">前五非华语最多（首）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="front_five_foreign_max" type="number" min="1" max="5" step="1" value="2" />
+                        <div class="hint">前五重点区最多包含的非华语曲目数。</div>
+                    </div>
+                    <div class="field">
+                        <label for="rest_genre_cap">其余流派上限（首）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="rest_genre_cap" type="number" min="1" max="20" step="1" value="5" />
+                        <div class="hint">前五之后同一流派在整份歌单中的最多曲目数。</div>
+                    </div>
+                    <div class="field">
+                        <label for="rest_language_cap">其余语言上限（首）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="rest_language_cap" type="number" min="1" max="20" step="1" value="12" />
+                        <div class="hint">前五之后同一语言在整份歌单中的最多曲目数。</div>
+                    </div>
+                </div>
+                <div class="note info">前五重点区至少包含 1 首没听过的曲目；这是固定编排规则，不单独提供开关。</div>
+
+                <h3 class="group-title">档位判定</h3>
+                <div class="grid2">
+                    <div class="field">
+                        <label for="pr_mode_min_days">PR 模式最小跨度（天）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="pr_mode_min_days" type="number" min="1" max="90" step="1" value="7" />
+                        <div class="hint">档位判定跨度：可归属事件覆盖天数达到此值才可能进入 PR 模式。</div>
+                    </div>
+                    <div class="field">
+                        <label for="pr_mode_min_events">PR 模式最少事件数<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="pr_mode_min_events" type="number" min="1" max="500" step="1" value="20" />
+                        <div class="hint">可归属的 Audio 播放事件条数门槛。</div>
+                    </div>
+                    <div class="field">
+                        <label for="mixed_mode_min_days">混合模式最小跨度（天）<span class="mode-chip mixed" data-mode="mixed">混合模式门槛</span></label>
+                        <input id="mixed_mode_min_days" type="number" min="1" max="30" step="1" value="1" />
+                        <div class="hint">低于 PR 门槛但达到此跨度时，行为信号只做有限打分修正。</div>
+                    </div>
+                    <div class="field">
+                        <label for="mixed_mode_min_events">混合模式最少事件数<span class="mode-chip mixed" data-mode="mixed">混合模式门槛</span></label>
+                        <input id="mixed_mode_min_events" type="number" min="1" max="100" step="1" value="5" />
+                        <div class="hint">进入混合模式所需的最少可归属事件数。</div>
+                    </div>
+                </div>
+                <div class="note info">数据不达标时沿用 v2 逻辑出歌单；判定在生成当天歌单时冻结。</div>
+
+                <h3 class="group-title">反馈衰减与有效播放</h3>
+                <div class="grid2">
+                    <div class="field">
+                        <label for="negative_half_life_days">负反馈半衰期（天）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="negative_half_life_days" type="number" min="1" max="60" step="1" value="7" />
+                        <div class="hint">极短播放与未完成播放的软降权按真实日期衰减的半衰期。</div>
+                    </div>
+                    <div class="field">
+                        <label for="positive_half_life_days">正反馈半衰期（天）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="positive_half_life_days" type="number" min="1" max="90" step="1" value="14" />
+                        <div class="hint">正向行为权重的衰减周期。</div>
+                    </div>
+                    <div class="field">
+                        <label for="valid_completion">计次完成率门槛<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="valid_completion" type="number" min="0.5" max="1" step="0.05" value="0.8" />
+                        <div class="hint">完成率达到此值才计入有效播放；收藏豁免。</div>
+                    </div>
+                    <div class="field">
+                        <label for="weak_completion">弱软降权完成率<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="weak_completion" type="number" min="0.1" max="1" step="0.05" value="0.5" />
+                        <div class="hint">未完成播放在此值与计次门槛之间时按完成度弱软降权。</div>
+                    </div>
+                    <div class="field">
+                        <label for="short_seconds">极短播放阈值（秒）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                        <input id="short_seconds" type="number" min="1" max="300" step="1" value="60" />
+                        <div class="hint">不足该秒数的播放视为极短播放，强软降权且不重复计次。</div>
+                    </div>
+                </div>
+
+                <h3 class="group-title">高级生成规则</h3>
+                <details class="adv">
+                    <summary>展开高级生成规则（默认折叠，仅 PR 模式生效）</summary>
+                    <div class="body">
+                        <p class="desc mt">回访曲目</p>
+                        <div class="grid2">
+                            <div class="field">
+                                <label for="revisit_max_per_day">每日回访注入上限（首）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="revisit_max_per_day" type="number" min="1" max="2" step="1" value="2" />
+                                <div class="hint">回访曲目每天最多注入前五重点区的数量，范围 1–2 首。</div>
+                            </div>
+                            <div class="field">
+                                <label for="revisit_min_valid_plays">回访最少有效播放次数<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="revisit_min_valid_plays" type="number" min="1" max="10" step="1" value="2" />
+                                <div class="hint">至少这么多次有效播放才可能被识别为回访曲目。</div>
+                            </div>
+                            <div class="field">
+                                <label for="revisit_min_gap_days">回访间隔（天）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="revisit_min_gap_days" type="number" min="1" max="180" step="1" value="30" />
+                                <div class="hint">两次有效播放至少相隔的天数，独立于软降权衰减。</div>
+                            </div>
+                            <div class="field">
+                                <label for="exclusion_days">排除窗口（天）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="exclusion_days" type="number" min="1" max="180" step="1" value="30" />
+                                <div class="hint">近期推荐过或听过的曲目在此窗口内不再进入候选。</div>
+                            </div>
+                        </div>
+
+                        <p class="desc mt">偶发沉浸</p>
+                        <div class="grid2">
+                            <div class="field">
+                                <label for="immersion_window_days">沉浸判定窗口（天）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="immersion_window_days" type="number" min="1" max="30" step="1" value="7" />
+                                <div class="hint">在该窗口内集中播放某艺人才计入偶发沉浸。</div>
+                            </div>
+                            <div class="field">
+                                <label for="immersion_min_plays">沉浸窗口最少有效播放次数<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="immersion_min_plays" type="number" min="1" max="50" step="1" value="5" />
+                                <div class="hint">窗口内该艺人至少这么多次有效播放才判定偶发沉浸。</div>
+                            </div>
+                            <div class="field">
+                                <label for="immersion_min_share">沉浸窗口最少占比<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="immersion_min_share" type="number" min="0.1" max="1" step="0.05" value="0.5" />
+                                <div class="hint">该艺人的播放占窗口内全部有效播放的比例门槛。</div>
+                            </div>
+                            <div class="field">
+                                <label for="immersion_prior_days">沉浸此前观察跨度（天）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="immersion_prior_days" type="number" min="1" max="365" step="1" value="180" />
+                                <div class="hint">判定前回溯多久统计该艺人的历史播放。</div>
+                            </div>
+                            <div class="field">
+                                <label for="immersion_prior_max">沉浸此前最多播放次数<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="immersion_prior_max" type="number" min="0" max="20" step="1" value="1" />
+                                <div class="hint">此前跨度内该艺人播放不超过此值才视为偶发沉浸。</div>
+                            </div>
+                        </div>
+
+                        <p class="desc mt">熟悉歌手未听曲目探索</p>
+                        <div class="grid2">
+                            <div class="field">
+                                <label for="familiar_play_count">熟悉歌手累计播放次数门槛<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="familiar_play_count" type="number" min="1" max="200" step="1" value="20" />
+                                <div class="hint">全历史累计播放次数达到此值即视为熟悉歌手。</div>
+                            </div>
+                            <div class="field">
+                                <label for="familiar_favorite_count">熟悉歌手收藏数门槛<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="familiar_favorite_count" type="number" min="0" max="20" step="1" value="2" />
+                                <div class="hint">收藏曲目数达到此值也可判定为熟悉歌手。</div>
+                            </div>
+                            <div class="field">
+                                <label for="familiar_recent_plays">熟悉歌手近期有效播放次数<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="familiar_recent_plays" type="number" min="1" max="50" step="1" value="3" />
+                                <div class="hint">近期窗口内有效播放达到此次数的歌手也计入熟悉歌手。</div>
+                            </div>
+                            <div class="field">
+                                <label for="familiar_recent_days">熟悉歌手近期统计窗口（天）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="familiar_recent_days" type="number" min="1" max="180" step="1" value="30" />
+                                <div class="hint">上项近期有效播放次数的统计窗口。</div>
+                            </div>
+                            <div class="field">
+                                <label for="familiar_per_artist_cap">每歌手未听曲目上限（首）<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="familiar_per_artist_cap" type="number" min="1" max="10" step="1" value="2" />
+                                <div class="hint">每位熟悉歌手最多贡献的未听曲目数。</div>
+                            </div>
+                        </div>
+
+                        <p class="desc mt">种子相似召回</p>
+                        <div class="grid2">
+                            <div class="field">
+                                <label for="seed_recall_enabled">启用种子相似召回<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <select id="seed_recall_enabled">
+                                    <option value="false" selected>false（默认关闭）</option>
+                                    <option value="true">true</option>
+                                </select>
+                                <div class="hint">从明确喜欢的曲目召回没听过但像的歌；不设专属配额，按曲目 id 去重。</div>
+                            </div>
+                            <div class="field">
+                                <label for="similarity_genre_weight">流派相似度权重<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="similarity_genre_weight" type="number" min="0" max="1" step="0.05" value="0.5" />
+                                <div class="hint">相似度与去相似共用的统一尺子：流派权重。</div>
+                            </div>
+                            <div class="field">
+                                <label for="similarity_language_weight">语言相似度权重<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="similarity_language_weight" type="number" min="0" max="1" step="0.05" value="0.2" />
+                                <div class="hint">语言以流派标签近似，此处为语言权重。</div>
+                            </div>
+                            <div class="field">
+                                <label for="similarity_artist_weight">艺人相似度权重<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="similarity_artist_weight" type="number" min="0" max="1" step="0.05" value="0.15" />
+                                <div class="hint">同艺人未听曲目归入探索池，此处为艺人维度权重。</div>
+                            </div>
+                            <div class="field">
+                                <label for="similarity_album_weight">专辑相似度权重<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="similarity_album_weight" type="number" min="0" max="1" step="0.05" value="0.1" />
+                                <div class="hint">专辑维度的相似度权重。</div>
+                            </div>
+                            <div class="field">
+                                <label for="similarity_era_weight">年代相似度权重<span class="mode-chip" data-mode="pr">仅 PR 模式生效</span></label>
+                                <input id="similarity_era_weight" type="number" min="0" max="1" step="0.05" value="0.05" />
+                                <div class="hint">发行年代维度的相似度权重。</div>
+                            </div>
+                        </div>
+                    </div>
+                </details>
 
                 <details class="adv">
                     <summary>时区</summary>
