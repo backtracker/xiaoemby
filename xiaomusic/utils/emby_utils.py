@@ -245,7 +245,7 @@ class EmbyUtil:
     DETAIL_FIELDS = "Genres,ProductionYear,Path,UserDataLastPlayedDate"
 
     def __init__(self, host, user_id, log, version="1.0.0",
-                 username=None, password=None):
+                 username=None, password=None, api_key=None):
         # 确保 host 包含协议前缀
         if host and not host.startswith(("http://", "https://")):
             host = f"http://{host}"  # 默认使用 http
@@ -255,14 +255,15 @@ class EmbyUtil:
         self.version = version
         self.username = username or ""
         self.password = password or ""
+        self.api_key = str(api_key or os.getenv("XIAOMUSIC_EMBY_API_KEY", "") or "")
         self._access_token = None
         self._auth_user_id = None
         # 稳定的设备 ID（基于 host + 用户名，重启后一致）
         self._device_id = f"xiaoemby-{uuid.uuid5(uuid.NAMESPACE_DNS, f'{host}-{self.username}')}"
         if self.username and self.password:
             self.login()
-        else:
-            self.log.error("未配置 Emby 用户名/密码，无法登录获取用户 token")
+        elif not self.api_key:
+            self.log.error("未配置 Emby 用户名/密码或 API Key，无法访问 Emby")
 
     def get_access_token(self):
         """供外部模块（如音频代理）取用登录 token"""
@@ -329,7 +330,7 @@ class EmbyUtil:
             auth += f', UserId="{self.user_id}"'
         return {
             "X-Emby-Authorization": auth,
-            "X-Emby-Token": self._access_token or "",
+            "X-Emby-Token": self._access_token or self.api_key,
             "Content-Type": "application/json"
         }
 
@@ -378,7 +379,7 @@ class EmbyUtil:
         """
         # 构建音频流URL，只对需要编码的参数进行编码
         container_encoded = urllib.parse.quote(audio.container)
-        api_key_encoded = urllib.parse.quote(self._access_token)
+        api_key_encoded = urllib.parse.quote(self._access_token or self.api_key)
         stream_url = f"/emby/Audio/{audio.id}/stream?Container={container_encoded}&api_key={api_key_encoded}"
         audio.stream_url = f"{self.host}{stream_url}"
 

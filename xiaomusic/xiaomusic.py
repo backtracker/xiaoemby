@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import os
+import random
 import re
 from dataclasses import asdict
 from logging.handlers import RotatingFileHandler
@@ -390,6 +391,20 @@ class XiaoMusic:
             if name in ["播放音乐", "来点音乐", "播放歌曲", "来点歌曲"]:
                 name = ""
 
+        # 简单「播放音乐」无需任何检索条件：直接用本地已加载的曲库随机组歌单。
+        if (
+            not name and not artist and not album and not genre
+            and not is_favorite and not years and not search_key
+        ):
+            local_names = list(self.music_library.all_music.keys())
+            if local_names:
+                random.shuffle(local_names)
+                playlist = local_names[: min(50, len(local_names))]
+                self.music_library.update_music_list_json("本地随机", playlist)
+                self.log.info(f"从本地曲库随机选取 {len(playlist)} 首，未调用 Emby 搜索接口")
+                await self.do_play_music_list(did, "本地随机", playlist[0])
+                return
+
         # 使用 EmbyUtil 获取音乐
         if self.emby_util:
             try:
@@ -723,6 +738,7 @@ class XiaoMusic:
                 version=__version__,
                 username=self.config.emby_username,
                 password=self.config.emby_password,
+                api_key=self.config.emby_api_key,
             )
             self.log.info("EmbyUtil initialized successfully")
         except Exception as e:

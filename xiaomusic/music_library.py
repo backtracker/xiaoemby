@@ -55,11 +55,45 @@ class MusicLibrary:
         self.default_music_list_names = []  # 非自定义歌单名称列表
         self.custom_play_list = None  # 自定义播放列表缓存
 
-    def gen_all_music_list(self):
-        """生成所有音乐列表
+    def _load_mirror_music(self):
+        """从本地曲库镜像加载全部曲目；播放地址仍指向 Emby，但不调用 Emby 搜索接口。"""
+        db_path = str(getattr(self.config, "mirror_db_path", "") or "")
+        if not db_path or not os.path.exists(db_path):
+            return []
+        try:
+            from xiaomusic.utils.daily_recommend import _audio_from_mirror
+            from xiaomusic.utils.library_mirror import LibraryMirror
 
-        从网络歌单（如Emby）生成音乐列表。
-        """
+            mirror = LibraryMirror(db_path)
+            try:
+                rows = mirror.snapshot()
+            finally:
+                mirror.close()
+            user_id = str(getattr(self.config, "emby_user_id", "") or "")
+            host = str(getattr(self.config, "emby_host", "") or "").rstrip("/")
+            token = str(getattr(self.config, "emby_api_key", "") or "")
+            audios = []
+            for row in rows:
+                audio = _audio_from_mirror(row, user_id)
+                audio.duration = int(row.get("runtime_ticks", 0) or 0) / 10_000_000
+                audio.container = row.get("ext") or "mp3"
+                audio.file_path = row.get("path", "")
+                audio.play_session_id = ""
+                audio.media_source_id = str(audio.id)
+                container = urllib.parse.quote(audio.container)
+                key = urllib.parse.quote(token)
+                audio.stream_url = (
+                    f"{host}/emby/Audio/{audio.id}/stream"
+                    f"?Container={container}&api_key={key}"
+                )
+                audios.append(audio)
+            return audios
+        except Exception as e:
+            self.log.warning(f"从本地曲库镜像加载失败: {type(e).__name__}")
+            return []
+
+    def gen_all_music_list(self):
+        """生成所有音乐列表：优先本地镜像，镜像不可用时回退 Emby 搜索。"""
         # 初始化all_music字典
         self.all_music = {}
 
@@ -71,8 +105,16 @@ class MusicLibrary:
             }
         )
 
-        # 从Emby服务器获取音乐
-        if self.emby_util:
+        # 优先从本地曲库镜像加载全库；镜像不可用时再回退 Emby 搜索。
+        self._mirror_loaded = False
+        mirror_music = self._load_mirror_music()
+        if mirror_music:
+            for audio in mirror_music:
+                music_name = f"{audio.name} - {audio.album} - {audio.album_artist}"
+                self.all_music[music_name] = audio
+            self._mirror_loaded = True
+            self.log.info(f"从本地曲库镜像获取到 {len(mirror_music)} 首歌曲")
+        elif self.emby_util:
             try:
                 # 获取Emby音乐
                 emby_music = self.emby_util.search_music(limit=50)
@@ -97,6 +139,8 @@ class MusicLibrary:
 
     def _restore_daily_recommend_tracks(self):
         """从缓存按 id 把今日推荐曲目拉回 all_music（重启后可播放）。"""
+        if getattr(self, "_mirror_loaded", False):
+            return  # 镜像已加载全库，推荐曲目自然已在 all_music 中
         if not self.emby_util:
             return
         try:
