@@ -1449,10 +1449,13 @@ def _mixed_multipliers(profile: BehaviorProfile, item_ids) -> dict:
 
 
 def _audio_from_mirror(row: dict, user_id: str = "") -> object:
-    """镜像条目 → Audio（只用于本地选曲/兜底，播放 URL 仍走 Emby 链路）。"""
+    """镜像条目 → Audio（只用于本地选曲/兜底，播放 URL 仍走 Emby 链路）。
+
+    曲库镜像只存静态元数据；动态信息（收藏/播放次数/最近播放）不在这里读取，
+    由后续 fetch_tracks_by_ids 的 Emby UserData 填充。
+    """
     from .emby_utils import Audio
 
-    state = (row.get("users") or {}).get(user_id) or {}
     artists = [str(name) for name in (row.get("artist") or [])]
     return Audio(
         name=row.get("name", ""),
@@ -1462,11 +1465,32 @@ def _audio_from_mirror(row: dict, user_id: str = "") -> object:
         artist_items=[{"Name": name} for name in artists],
         genres=list(row.get("genres") or []),
         production_year=int(row.get("year") or 0),
-        play_count=int(state.get("play_count", 0) or 0),
-        is_favorite=bool(state.get("favorite", False)),
-        last_played_at=state.get("last_played_date") or "",
         date_created=row.get("date_created", ""),
     )
+
+
+def _user_states_from_pr(events, user_id: str) -> dict[str, dict[str, dict[str, object]]]:
+    """从 PR 有效播放推导动态用户态，供画像使用（不读镜像）。
+
+    累计播放次数取有效播放条数，最近播放取最后一次有效播放日期。
+    Emby 侧累计 PlayCount / 收藏在最终 fetch_tracks_by_ids 的 Audio 上体现。
+    """
+    per_item: dict[str, dict[str, object]] = {}
+    for event in events or ():
+        if getattr(event, "user_id", user_id) != user_id or not getattr(event, "is_valid", False):
+            continue
+        item_id = str(getattr(event, "item_id", ""))
+        if not item_id:
+            continue
+        entry = per_item.setdefault(item_id, {"play_count": 0, "last_played_date": ""})
+        entry["play_count"] = int(entry["play_count"] or 0) + 1
+        started = getattr(event, "started_at", None)
+        day = getattr(started, "date", lambda: None)()
+        if day is not None:
+            iso = str(day)
+            if iso > str(entry.get("last_played_date") or ""):
+                entry["last_played_date"] = iso
+    return {item_id: {user_id: state} for item_id, state in per_item.items()}
 
 
 def _v3_score(item_id: str, item: dict, profile: BehaviorProfile, cfg, today: str, pool: CandidatePool) -> float:
@@ -1787,6 +1811,7 @@ def generate(cfg, emby, renew: bool = False) -> DailyRecommendation:
             config=_profile_config(cfg),
             exposure=track_exposure,
             blocked_ids=snoozed,
+            user_states=_user_states_from_pr(pr_result.events, user_id),
         )
         if mode == MODE_PR:
             pool = build_candidate_pool(

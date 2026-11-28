@@ -42,23 +42,34 @@ def make_event(
 
 
 def make_item(item_id, genres, artist=(), *, favorite=False, play_count=0, last_played=None):
-    return {
+    item = {
         "id": item_id,
         "genres": list(genres),
         "artist": list(artist),
-        "users": {
-            USER: {
-                "favorite": favorite,
-                "play_count": play_count,
-                "last_played_date": last_played,
-            }
-        },
     }
+    # 动态信息不落镜像；由 build() 收集成 user_states 注入画像。
+    item["_dynamic"] = {
+        "favorite": favorite,
+        "play_count": play_count,
+        "last_played_date": last_played,
+    }
+    return item
 
 
 def build(events, items=(), **kwargs):
     kwargs.setdefault("today", TODAY)
     kwargs.setdefault("user_id", USER)
+    user_states = {
+        str(item["id"]): {
+            USER: {
+                "favorite": bool(item.get("_dynamic", {}).get("favorite", False)),
+                "play_count": item.get("_dynamic", {}).get("play_count", 0),
+                "last_played_date": item.get("_dynamic", {}).get("last_played_date"),
+            }
+        }
+        for item in items
+    }
+    kwargs.setdefault("user_states", user_states)
     return build_profile(events, library=library_by_id(items), **kwargs)
 
 

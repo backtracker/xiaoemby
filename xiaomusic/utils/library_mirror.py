@@ -15,8 +15,8 @@ from typing import Any
 # 陈旧阈值起点：超过这个天数未成功同步就回退 v2（配置化，init 时可覆盖）。
 STALE_DAYS = 7
 
-# Emby 唯一权威字段：元数据（全库共享）+ 用户态（按 UserId 分桶）。
-# 这些字段一律由 Emby 覆盖，本地不写回。
+# Emby 唯一权威字段：曲目元数据（全库共享）。
+# 用户态动态信息（收藏/播放次数/最近播放）不落镜像，一律走 Emby UserData + PR 事件接口。
 AUTHORITATIVE_META = (
     "name",
     "genres",
@@ -29,8 +29,6 @@ AUTHORITATIVE_META = (
     "path",
     "ext",
 )
-AUTHORITATIVE_USER = ("favorite", "play_count", "last_played_date")
-
 # 本地派生的画像字段，另存且不受 Emby 覆盖影响。
 DERIVED_FIELDS = ("taste", "penalty")
 
@@ -42,7 +40,7 @@ DERIVED_FIELDS = ("taste", "penalty")
 # 因此这里假设：增量水位候选为 MinDateLastSaved / MinDateLastSavedForUser（若实测该 Emby
 # 版本支持），再换算成归约层单调递增的 seq；**在实测确认前，增量同步退化为每日全量对账**，
 # 不依赖任何未验证字段。纯归约层只认抽象 seq，便于日后替换适配层而不改对外接口。
-# 用户态在原始响应里嵌套在 item["UserData"]，由 normalize_emby_item 摊平后再进归约器。
+# 用户态在原始响应里嵌套在 item["UserData"]，但不落镜像：动态信息走接口实时获取。
 
 
 def _clone(value: Any) -> Any:
@@ -50,9 +48,7 @@ def _clone(value: Any) -> Any:
 
 
 def _copy_authoritative(item: dict[str, Any]) -> dict[str, Any]:
-    copied = {key: _clone(item.get(key)) for key in AUTHORITATIVE_META}
-    copied["users"] = _clone(item.get("users") or {})
-    return copied
+    return {key: _clone(item.get(key)) for key in AUTHORITATIVE_META}
 
 
 def _blank_mirror_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -69,12 +65,6 @@ def normalize_emby_item(raw: dict[str, Any], user_id: str) -> dict[str, Any]:
     实测坑：PlayCount / LastPlayedDate / IsFavorite 不在顶层，而在 item["UserData"]；
     DateCreated 在顶层，但必须显式列进 Fields 才稳定返回。
     """
-    user_data = raw.get("UserData") or {}
-    user_state = {
-        "favorite": bool(user_data.get("IsFavorite", False)),
-        "play_count": user_data.get("PlayCount", 0) or 0,
-        "last_played_date": user_data.get("LastPlayedDate"),
-    }
     path = raw.get("Path") or ""
     ext = path.rsplit(".", 1)[-1] if "." in path.rsplit("/", 1)[-1] else ""
     return {
@@ -90,20 +80,14 @@ def normalize_emby_item(raw: dict[str, Any], user_id: str) -> dict[str, Any]:
         "path": path,
         "ext": ext,
         "deleted": False,
-        "users": {user_id: user_state},
     }
 
 
 def _write_authoritative_field(
     target: dict[str, Any], field: str, value: Any, user_id: str | None = None
 ) -> None:
-    """唯一权威字段写入口：用户态按 UserId 分桶，元数据写在条目顶层。"""
-    if field in AUTHORITATIVE_USER:
-        target.setdefault("users", {}).setdefault(user_id or "default", {})[field] = _clone(
-            value
-        )
-    else:
-        target[field] = _clone(value)
+    """唯一权威字段写入口：曲库镜像只写元数据，用户态不落本地。"""
+    target[field] = _clone(value)
 
 
 def _overwrite_authoritative(target: dict[str, Any], source: dict[str, Any]) -> None:
@@ -115,7 +99,6 @@ def _overwrite_authoritative(target: dict[str, Any], source: dict[str, Any]) -> 
 
 def _reduce_emby_add(state: dict[str, Any], action: dict[str, Any]) -> None:
     item = _clone(action["item"])
-    item.setdefault("users", {})
     state["emby"]["items"][item["id"]] = item
     state["emby"]["watermark"] += 1
     state["emby"]["changes"].append(
@@ -422,18 +405,6 @@ class LibraryMirror:
                 )
                 """
             )
-            self._conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS user_state (
-                    item_id TEXT,
-                    user_id TEXT,
-                    favorite INTEGER,
-                    play_count INTEGER,
-                    last_played_date TEXT,
-                    PRIMARY KEY (item_id, user_id)
-                )
-                """
-            )
 
     def close(self) -> None:
         self._conn.close()
@@ -455,7 +426,6 @@ class LibraryMirror:
         mirror = state["mirror"]
         with self._conn:
             self._conn.execute("DELETE FROM tracks")
-            self._conn.execute("DELETE FROM user_state")
             for item_id, item in mirror["items"].items():
                 self._conn.execute(
                     """
@@ -481,21 +451,6 @@ class LibraryMirror:
                         int(bool(item.get("tombstone"))),
                     ),
                 )
-                for user_id, user_state in (item.get("users") or {}).items():
-                    self._conn.execute(
-                        """
-                        INSERT INTO user_state (
-                            item_id, user_id, favorite, play_count, last_played_date
-                        ) VALUES (?, ?, ?, ?, ?)
-                        """,
-                        (
-                            item_id,
-                            user_id,
-                            int(bool(user_state.get("favorite"))),
-                            user_state.get("play_count", 0),
-                            user_state.get("last_played_date"),
-                        ),
-                    )
             self._set_meta(
                 {
                     "version": mirror["version"],
@@ -565,19 +520,4 @@ class LibraryMirror:
             "watermark": self._get_meta("watermark", 0),
             "last_sync_day": self._get_meta("last_sync_day"),
             "stale_days": self._get_meta("stale_days", STALE_DAYS),
-        }
-
-    def user_state(self, item_id: str, user_id: str) -> dict[str, Any] | None:
-        """按条目 Id + UserId 取用户态；无记录返回 None。"""
-        row = self._conn.execute(
-            "SELECT favorite, play_count, last_played_date FROM user_state "
-            "WHERE item_id = ? AND user_id = ?",
-            (str(item_id), user_id),
-        ).fetchone()
-        if row is None:
-            return None
-        return {
-            "favorite": bool(row["favorite"]),
-            "play_count": row["play_count"],
-            "last_played_date": row["last_played_date"],
         }

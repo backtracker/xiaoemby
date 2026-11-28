@@ -14,7 +14,6 @@ from typing import Any
 
 from .library_mirror import (
     AUTHORITATIVE_META,
-    AUTHORITATIVE_USER,
     STALE_DAYS,
     LibraryMirror,
     MirrorModel,
@@ -136,13 +135,7 @@ def _previous_state(mirror: LibraryMirror, cfg, user_id: str, day_number: int) -
     state["mirror"]["last_sync_day"] = info.get("last_sync_day")
     items: dict[str, dict[str, Any]] = {}
     for row in mirror.snapshot(include_tombstones=True):
-        item_id = str(row["id"])
-        user_state = mirror.user_state(item_id, user_id) or {
-            "favorite": False,
-            "play_count": 0,
-            "last_played_date": None,
-        }
-        items[item_id] = dict(row, users={user_id: user_state})
+        items[str(row["id"])] = dict(row)
     state["mirror"]["items"] = items
     return state
 
@@ -174,14 +167,6 @@ def _diff_changes(
         for field in AUTHORITATIVE_META:
             if old.get(field) != item.get(field):
                 push(item_id, kind="edit", field=field, value=item.get(field))
-        old_users = old.get("users") or {}
-        for user_id, user_state in (item.get("users") or {}).items():
-            for field in AUTHORITATIVE_USER:
-                if (old_users.get(user_id) or {}).get(field) != user_state.get(field):
-                    push(
-                        item_id, kind="edit", field=field,
-                        value=user_state.get(field), user_id=user_id,
-                    )
     for item_id, old in previous.items():
         if item_id not in incoming and not old.get("tombstone"):
             push(item_id, kind="delete")

@@ -115,13 +115,13 @@ def test_full_import_then_daily_incremental_and_weekly_reconcile(tmp_path):
         assert len(mirror.snapshot()) == 3
         assert mirror.version_info()["version"] == 1
 
-        # 用户态变化 + 新增 + 删除：日常同步只推进水位，不动派生字段。
+        # 用户态变化 + 新增 + 删除：日常同步只推进水位，不动派生字段，不落用户态。
         client.rows = [raw(1, favorite=True, play_count=4), raw(2), raw(4)]
         daily = sync_mirror(cfg, client)
         assert daily["ok"] is True
         assert daily["kind"] == "daily"
         rows = {row["id"]: row for row in mirror.snapshot(include_tombstones=True)}
-        assert mirror.user_state("1", "u1")["favorite"] is True
+        assert "users" not in rows["1"]
         assert rows["1"]["taste"] == 0.5  # 派生字段未被覆盖
         assert "2" in rows and "3" in rows and rows["3"]["tombstone"] is True
         assert "3" not in {row["id"] for row in mirror.snapshot()}

@@ -242,7 +242,7 @@ class EmbyUtil:
     DEVICE_NAME = "小爱音箱"
     # /Items 默认只返回精简字段，流派/年份/最近播放时间必须显式请求，
     # 否则 item 里连 Genres 字段都不存在（不是空数组）。
-    DETAIL_FIELDS = "Genres,ProductionYear,Path,UserDataLastPlayedDate"
+    DETAIL_FIELDS = "Genres,ProductionYear,Path,UserDataPlayCount,UserDataLastPlayedDate"
 
     def __init__(self, host, user_id, log, version="1.0.0",
                  username=None, password=None, api_key=None):

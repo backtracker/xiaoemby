@@ -118,7 +118,16 @@ def _resolve_today(events: Iterable[Any], today: Any) -> date:
     return max(known) if known else date.today()
 
 
-def _user_state(item: Mapping[str, Any] | None, user_id: str) -> dict[str, Any]:
+def _user_state(
+    item: Mapping[str, Any] | None,
+    user_id: str,
+    injected: Mapping[str, Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """用户态动态信息：优先用调用方从 Emby UserData / PR 注入的快照，兼容旧镜像 users 字段。"""
+    if injected:
+        state = injected.get(user_id) or {}
+        if isinstance(state, Mapping):
+            return dict(state)
     if not item:
         return {}
     users = item.get("users")
@@ -170,13 +179,22 @@ def build_profile(
     config: ProfileConfig | None = None,
     exposure: Mapping[str, Any] | None = None,
     blocked_ids: Iterable[str] = (),
+    user_states: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
 ) -> BehaviorProfile:
-    """从清洗事件与镜像用户态构建画像；所有输入只读，输出为全新结构。"""
+    """从清洗事件构建画像；用户态动态信息由调用方注入（Emby UserData + PR 推导）。
+
+    user_states 形状: {item_id: {user_id: {favorite, play_count, last_played_date}}}。
+    所有输入只读，输出为全新结构。
+    """
     cfg = config or ProfileConfig()
     items = library or {}
     event_list = list(events)
     today_date = _resolve_today(event_list, today)
     blocked = {str(value) for value in blocked_ids}
+
+    def state_of(item_id: str) -> dict[str, Any]:
+        injected = (user_states or {}).get(str(item_id))
+        return _user_state(items.get(str(item_id)), user_id, injected)
 
     prepared: list[tuple[str, date, dict[str, Any], float | None, bool, bool, bool]] = []
     for event in event_list:
@@ -186,8 +204,7 @@ def build_profile(
         day = _as_date(getattr(event, "started_at", None))
         if day is None:
             continue
-        item = items.get(item_id)
-        state = _user_state(item, user_id)
+        state = state_of(item_id)
         favorite = bool(state.get("favorite", False))
         completion, short, incomplete = _classify(event, cfg)
         prepared.append((item_id, day, state, completion, short, incomplete, favorite))
@@ -241,7 +258,7 @@ def build_profile(
     confidence = min(1.0, valid_sample_count / cfg.min_taste_samples) if cfg.min_taste_samples else 0.0
 
     def cumulative(item_id: str) -> int:
-        state = _user_state(items.get(item_id), user_id)
+        state = state_of(item_id)
         mirror_count = int(state.get("play_count", 0) or 0)
         return max(mirror_count, len(valid_dates.get(item_id, ())))
 
@@ -261,7 +278,7 @@ def build_profile(
         if count:
             for genre in genres:
                 genre_scores[genre] += _log_capped(count) / len(genres)
-        if _user_state(item, user_id).get("favorite"):
+        if state_of(item_id).get("favorite"):
             for genre in genres:
                 genre_scores[genre] += 3.0 / len(genres)
     for item_id, day, _state, _completion, _short, _incomplete, _favorite in prepared:
@@ -286,7 +303,7 @@ def build_profile(
     familiar_of: dict[str, float] = {}
     base_score: dict[str, float] = {}
     for item_id in set(items) | set(window_counts):
-        state = _user_state(items.get(item_id), user_id)
+        state = state_of(item_id)
         is_favorite = bool(state.get("favorite", False))
         familiar = (
             1.0
@@ -430,11 +447,7 @@ def build_profile(
             if artist in active_immersion:
                 continue
             total_plays = sum(cumulative(item_id) for item_id in member_ids)
-            favorites = sum(
-                1
-                for item_id in member_ids
-                if _user_state(items.get(item_id), user_id).get("favorite")
-            )
+            favorites = sum(1 for item_id in member_ids if state_of(item_id).get("favorite"))
             recent_plays = sum(
                 1
                 for item_id in member_ids
@@ -450,8 +463,7 @@ def build_profile(
             familiar_artists.append(artist)
             candidates: list[str] = []
             for item_id in sorted(member_ids):
-                item = items[item_id]
-                state = _user_state(item, user_id)
+                state = state_of(item_id)
                 if state.get("favorite"):
                     continue
                 if valid_dates.get(item_id):

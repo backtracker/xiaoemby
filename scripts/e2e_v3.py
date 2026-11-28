@@ -37,6 +37,7 @@ from xiaomusic.utils.candidate_pool import (  # noqa: E402
 from xiaomusic.utils.daily_recommend import (  # noqa: E402
     _audio_from_mirror,
     _today,
+    _user_states_from_pr,
     generate,
 )
 from xiaomusic.utils.library_mirror import LibraryMirror  # noqa: E402
@@ -146,16 +147,8 @@ def import_mirror_via_api(cfg: Config, session: requests.Session) -> dict[str, A
 def load_snapshot_with_user_state(
     mirror: LibraryMirror, user_id: str
 ) -> list[dict[str, Any]]:
-    """从落库镜像读全库，并附带当前账号的用户态（收藏/次数/上次播放）。"""
-    rows = []
-    for row in mirror.snapshot():
-        state = mirror.user_state(row["id"], user_id) or {
-            "favorite": False,
-            "play_count": 0,
-            "last_played_date": None,
-        }
-        rows.append(dict(row, users={user_id: state}))
-    return rows
+    """读全库静态快照；动态用户态不落镜像，由 PR 事件在 MirrorEmby 里推导。"""
+    return list(mirror.snapshot())
 
 
 def runtime_map(snapshot: list[dict[str, Any]]) -> dict[str, float]:
@@ -269,10 +262,17 @@ class MirrorEmby:
         self.library_snapshot = rows
         self.mirror_state = state
         self.by_id = {str(row["id"]): row for row in rows}
-        played = [row for row in rows if (row.get("users") or {}).get(user_id, {}).get("last_played_date")]
+        # 动态用户态从 PR 有效播放推导（镜像不再存用户态）
+        self.user_states = _user_states_from_pr(pr_result.events or (), user_id)
+        played = [
+            row for row in rows
+            if self.user_states.get(str(row["id"]), {}).get(user_id, {}).get("last_played_date")
+        ]
         self.recent = sorted(
             played,
-            key=lambda row: str(row["users"][user_id]["last_played_date"]),
+            key=lambda row: str(
+                self.user_states[str(row["id"])][user_id]["last_played_date"]
+            ),
             reverse=True,
         )[:50]
 
@@ -283,8 +283,17 @@ class MirrorEmby:
         ordered = sorted(
             self.rows,
             key=lambda row: (
-                int((row.get("users") or {}).get(self.user_id, {}).get("play_count") or 0),
-                bool((row.get("users") or {}).get(self.user_id, {}).get("favorite")),
+                int(
+                    self.user_states.get(str(row["id"]), {})
+                    .get(self.user_id, {})
+                    .get("play_count")
+                    or 0
+                ),
+                bool(
+                    self.user_states.get(str(row["id"]), {})
+                    .get(self.user_id, {})
+                    .get("favorite")
+                ),
             ),
             reverse=True,
         )
@@ -357,13 +366,8 @@ def run() -> dict[str, Any]:
                 "items": {row["id"]: row for row in rows},
             },
         }
-        played = sum(
-            1
-            for row in rows
-            if (row.get("users") or {}).get(user_id, {}).get("last_played_date")
-        )
         print(
-            f"  镜像版本 {info['version']}，落库曲目 {len(rows)}，有上次播放时间 {played}",
+            f"  镜像版本 {info['version']}，落库静态曲目 {len(rows)}（动态信息走接口）",
             flush=True,
         )
 

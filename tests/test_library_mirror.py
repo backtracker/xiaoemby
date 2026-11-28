@@ -24,7 +24,6 @@ def make_item(
     runtime_ticks=2670000000,
     path=None,
     ext="mp3",
-    users=None,
 ):
     return {
         "id": item_id,
@@ -39,15 +38,6 @@ def make_item(
         "path": path or f"/music/{item_id}.{ext}",
         "ext": ext,
         "deleted": False,
-        "users": deepcopy(users or {}),
-    }
-
-
-def make_user(favorite=False, play_count=0, last_played_date=None):
-    return {
-        "favorite": favorite,
-        "play_count": play_count,
-        "last_played_date": last_played_date,
     }
 
 
@@ -55,7 +45,7 @@ def add(state, item):
     return MirrorModel.reduce(state, {"type": "EMBY_ADD", "item": item})
 
 
-def seeded_state(items, users=None):
+def seeded_state(items):
     state = MirrorModel.init(stale_days=STALE_DAYS)
     for item in items:
         state = add(state, item)
@@ -73,12 +63,7 @@ def committed(tmp_path, state, name="mirror.sqlite"):
 
 def test_full_import_builds_full_library_snapshot(tmp_path):
     items = [
-        make_item(
-            "a1",
-            "甲歌",
-            genres=["流行"],
-            users={"u-nick": make_user(favorite=True, play_count=12)},
-        ),
+        make_item("a1", "甲歌", genres=["流行"]),
         make_item("b2", "乙歌", genres=["民谣"], year=2009),
     ]
     state = seeded_state(items)
@@ -124,71 +109,31 @@ def test_stale_uses_configured_days():
 # --- slice 2: 按水位增量 upsert + 用户态按 UserId 分桶 ---
 
 
-def test_daily_sync_consumes_watermark_and_upserts_user_state(tmp_path):
-    state = seeded_state(
-        [
-            make_item(
-                "a1",
-                "甲歌",
-                users={"u-nick": make_user(play_count=3)},
-            )
-        ]
-    )
+def test_daily_sync_consumes_watermark_and_metadata_edits(tmp_path):
+    """镜像只存元数据：日常同步推进水位、消费元数据变更，不写用户态。"""
+    state = seeded_state([make_item("a1", "甲歌")])
     state = MirrorModel.reduce(
-        state,
-        {
-            "type": "EMBY_EDIT",
-            "id": "a1",
-            "field": "favorite",
-            "value": True,
-            "user_id": "u-nick",
-        },
+        state, {"type": "EMBY_EDIT", "id": "a1", "field": "name", "value": "甲歌（新）"}
     )
-    state = MirrorModel.reduce(
-        state,
-        {
-            "type": "EMBY_EDIT",
-            "id": "a1",
-            "field": "play_count",
-            "value": 9,
-            "user_id": "u-nick",
-        },
-    )
-
-    before = committed(tmp_path, state, "before.sqlite")
-    assert before.user_state("a1", "u-nick")["play_count"] == 3
 
     state = MirrorModel.reduce(state, {"type": "DAILY_SYNC"})
     assert state["mirror"]["watermark"] == state["emby"]["watermark"]
     assert len(state["changed"]) == 1
 
     after = committed(tmp_path, state, "after.sqlite")
-    assert after.user_state("a1", "u-nick") == {
-        "favorite": True,
-        "play_count": 9,
-        "last_played_date": None,
-    }
-    assert after.user_state("a1", "u-other") is None
+    row = next(row for row in after.snapshot() if row["id"] == "a1")
+    assert row["name"] == "甲歌（新）"
+    assert "users" not in row
 
 
-def test_user_state_is_isolated_per_user_id(tmp_path):
-    state = seeded_state(
-        [
-            make_item(
-                "a1",
-                "甲歌",
-                users={
-                    "u-nick": make_user(favorite=True, play_count=5),
-                    "u-guest": make_user(favorite=False, play_count=1),
-                },
-            )
-        ]
-    )
+def test_snapshot_has_no_user_state_fields(tmp_path):
+    """静态/动态切分：镜像快照不再带 users 用户态字段。"""
+    state = seeded_state([make_item("a1", "甲歌")])
     mirror = committed(tmp_path, state)
 
-    assert mirror.user_state("a1", "u-nick")["favorite"] is True
-    assert mirror.user_state("a1", "u-guest")["favorite"] is False
-    assert mirror.user_state("a1", "u-guest")["play_count"] == 1
+    row = next(row for row in mirror.snapshot() if row["id"] == "a1")
+    assert "users" not in row
+    assert row["name"] == "甲歌"
 
 
 def test_daily_sync_without_new_changes_keeps_watermark(tmp_path):
@@ -242,49 +187,20 @@ def test_full_import_from_paginated_raw_emby_items(tmp_path):
     assert a1["artist"] == ["甲"]
     assert a1["ext"] == "flac"
     assert a1["date_created"] == "2026-11-25T03:36:39.0000000Z"
-    assert mirror.user_state("a1", "u-nick") == {
-        "favorite": True,
-        "play_count": 12,
-        "last_played_date": "2026-11-25T14:04:02.0000000Z",
-    }
-    assert mirror.user_state("b2", "u-nick") == {
-        "favorite": False,
-        "play_count": 0,
-        "last_played_date": None,
-    }
-    assert normalize_emby_item(page1[0], "u-nick")["users"]["u-nick"]["favorite"] is True
+    assert "users" not in a1
+    assert "users" not in normalize_emby_item(page1[0], "u-nick")
 
 
 # --- slice 3: 每周对账（权威覆盖 + 派生保留）+ 墓碑 + 候选池只读查询 ---
 
 
 def test_weekly_reconcile_overwrites_authoritative_and_preserves_derived(tmp_path):
-    state = seeded_state(
-        [
-            make_item(
-                "a1",
-                "甲歌",
-                genres=["流行"],
-                year=2010,
-                users={"u-nick": make_user(favorite=False, play_count=3)},
-            )
-        ]
-    )
+    state = seeded_state([make_item("a1", "甲歌", genres=["流行"], year=2010)])
     state = MirrorModel.reduce(
         state, {"type": "LOCAL_EDIT", "id": "a1", "field": "genres", "value": ["古典"]}
     )
     state = MirrorModel.reduce(
         state, {"type": "LOCAL_EDIT", "id": "a1", "field": "taste", "value": 0.9}
-    )
-    state = MirrorModel.reduce(
-        state,
-        {
-            "type": "LOCAL_EDIT",
-            "id": "a1",
-            "field": "favorite",
-            "value": True,
-            "user_id": "u-nick",
-        },
     )
     state = MirrorModel.reduce(
         state, {"type": "EMBY_EDIT", "id": "a1", "field": "name", "value": "甲歌（修）"}
@@ -298,8 +214,7 @@ def test_weekly_reconcile_overwrites_authoritative_and_preserves_derived(tmp_pat
     assert row["genres"] == ["流行"]
     assert row["taste"] == 0.9
     assert row["penalty"] == 0.0
-    assert mirror.user_state("a1", "u-nick")["favorite"] is False
-    assert mirror.user_state("a1", "u-nick")["play_count"] == 3
+    assert "users" not in row
 
 
 def test_weekly_reconcile_adds_item_missed_by_incremental(tmp_path):
