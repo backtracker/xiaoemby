@@ -211,7 +211,13 @@ def unheard_ids_from_pool(
 ) -> set[str]:
     """按与编排一致的公开入口重算探索池，用于校验「≥1 首没听过」。"""
     library = {str(row["id"]): row for row in snapshot}
-    profile = build_profile(events, library=library, user_id=user_id, today=today)
+    profile = build_profile(
+        events,
+        library=library,
+        user_id=user_id,
+        today=today,
+        user_states=_user_states_from_pr(events, user_id),
+    )
     pool = build_candidate_pool(snapshot, profile, config=CandidateConfig(), today=today)
     return set(pool.explore)
 
@@ -379,6 +385,14 @@ def run() -> dict[str, Any]:
             "  PR: 原始行 {raw_rows}，合并事件 {merged_events}，有效 {valid_events}，"
             "跨度 {span_days} 天，原因 {reason}".format(**summary),
             flush=True,
+        )
+        dynamic = _user_states_from_pr(pr_result.events or (), user_id)
+        played = sum(
+            1
+            for row in rows
+            if dynamic.get(str(row["id"]), {})
+            .get(user_id, {})
+            .get("last_played_date")
         )
 
         install_llm_stub()
